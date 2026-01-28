@@ -5,6 +5,7 @@ pub struct ImageGenerationRequest {
     pub prompt: String,
     pub negative_prompt: Option<String>,
     pub image: Option<String>,
+    pub images: Option<Vec<String>>,
     #[serde(default = "default_model")]
     pub model: String,
     #[serde(default = "default_n")]

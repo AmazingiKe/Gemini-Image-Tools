@@ -352,14 +352,21 @@ async fn perform_generation(
         payload.prompt.clone()
     };
 
-    let content = if let Some(img_data) = &payload.image {
-        serde_json::json!([
-            { "type": "text", "text": full_prompt },
-            { "type": "image_url", "image_url": { "url": img_data } }
-        ])
-    } else {
-        serde_json::json!(full_prompt)
-    };
+    let mut content_array = vec![
+        serde_json::json!({ "type": "text", "text": full_prompt })
+    ];
+
+    if let Some(img_data) = &payload.image {
+        content_array.push(serde_json::json!({ "type": "image_url", "image_url": { "url": img_data } }));
+    }
+
+    if let Some(imgs) = &payload.images {
+        for img_data in imgs {
+            content_array.push(serde_json::json!({ "type": "image_url", "image_url": { "url": img_data } }));
+        }
+    }
+
+    let content = serde_json::Value::Array(content_array);
 
     messages.push(models::openai::ChatMessage {
         role: "user".to_string(),

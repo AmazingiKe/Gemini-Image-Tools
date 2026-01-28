@@ -67,18 +67,54 @@ function GeneratorPage({
   setModel, 
   parallelCount, 
   setParallelCount, 
-  baseImage,
-  setBaseImage, 
+  baseImages,
+  setBaseImages, 
   startGeneration,
   onImageClick,
   isEnhancing,
   onEnhance
 }: any) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragging(true);
+    } else if (e.type === 'dragleave') {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    const newImages = await Promise.all(imageFiles.map(file => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+    }));
+
+    setBaseImages((prev: string[]) => [...prev, ...newImages]);
+  };
 
   return (
     <>
-      <main className="flex-1 p-8 overflow-y-auto">
+      <main 
+        className={`flex-1 p-8 overflow-y-auto transition-colors ${isDragging ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+        onDragEnter={handleDrag}
+        onDragOver={handleDrag}
+        onDragLeave={handleDrag}
+        onDrop={handleDrop}
+      >
         <div className="max-w-[1600px] mx-auto">
           {tasks.length === 0 ? (
             <div className="h-[50vh] flex flex-col items-center justify-center">
@@ -94,7 +130,7 @@ function GeneratorPage({
               </motion.div>
               <h2 className="text-3xl font-bold tracking-tight text-black dark:text-white mb-3 text-center">释放你的想象力</h2>
               <p className="text-gray-400 dark:text-gray-500 text-center max-w-sm font-medium leading-relaxed">
-                输入您的绘图灵感，利用 Gemini 强大的生图能力为您捕捉瞬间美学。
+                输入您的绘图灵感，或者直接拖入多张参考图进行询问与生成。
               </p>
             </div>
           ) : (
@@ -234,42 +270,36 @@ function GeneratorPage({
             )}
           </AnimatePresence>
 
-          {baseImage && (
-            <div className="flex items-center gap-3 bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-2 rounded-2xl border border-white/50 dark:border-white/10 w-fit shadow-2xl">
-              <div className="relative">
-                <img src={baseImage} className="w-12 h-12 object-cover rounded-lg shadow-inner" alt="Preview" />
-                <button 
-                  onClick={() => setBaseImage(null)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg flex items-center justify-center"
-                >
-                  <Trash2 className="w-2.5 h-2.5" />
-                </button>
+          {baseImages.length > 0 && (
+            <div className="flex items-center gap-3 bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-2 rounded-2xl border border-white/50 dark:border-white/10 w-fit shadow-2xl max-w-full overflow-x-auto custom-scrollbar">
+              <div className="flex gap-2">
+                {baseImages.map((img: string, idx: number) => (
+                  <div key={idx} className="relative shrink-0">
+                    <img src={img} className="w-12 h-12 object-cover rounded-lg shadow-inner" alt={`Preview ${idx}`} />
+                    <button 
+                      onClick={() => setBaseImages((prev: string[]) => prev.filter((_, i) => i !== idx))}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg flex items-center justify-center"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
-              <div className="pr-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-black dark:text-white leading-none">参考图锁定</p>
-                <p className="text-[8px] text-gray-400 mt-0.5 uppercase tracking-tighter">Reference Locked</p>
+              <div className="pr-3 pl-1 border-l border-gray-200 dark:border-white/10 ml-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-black dark:text-white leading-none whitespace-nowrap">{baseImages.length} 张参考图</p>
+                <p className="text-[8px] text-gray-400 mt-0.5 uppercase tracking-tighter whitespace-nowrap">Images Attached</p>
               </div>
             </div>
           )}
           
-          <div className="bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-1.5 rounded-full border border-white/50 dark:border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex items-center gap-1.5 group transition-all duration-500 focus-within:shadow-[0_10px_40px_rgba(0,0,0,0.12)] focus-within:bg-white/90 dark:focus-within:bg-black/90">
+          <div className={`bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-1.5 rounded-full border border-white/50 dark:border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex items-center gap-1.5 group transition-all duration-500 focus-within:shadow-[0_10px_40px_rgba(0,0,0,0.12)] focus-within:bg-white/90 dark:focus-within:bg-black/90 ${isDragging ? 'ring-2 ring-blue-500 bg-blue-50/50' : ''}`}>
             <div className="flex items-center">
-              <label className="cursor-pointer p-2.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all text-gray-400 hover:text-black dark:hover:text-white">
-                <ImageIcon className="w-5 h-5" />
-                <input 
-                  type="file" 
-                  className="hidden" 
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onloadend = () => setBaseImage(reader.result as string);
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                />
-              </label>
+              {isDragging && (
+                <div className="p-2.5 text-blue-500 flex items-center gap-1">
+                  <ImageIcon className="w-5 h-5 scale-125 animate-pulse" />
+                  <span className="text-[10px] font-black uppercase animate-pulse">松开以添加</span>
+                </div>
+              )}
               <button 
                 onClick={() => setShowAdvanced(!showAdvanced)}
                 className={`p-2.5 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white'}`}
@@ -283,7 +313,7 @@ function GeneratorPage({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && startGeneration()}
-              placeholder="描述您的创意..."
+              placeholder={isDragging ? "将图片拖放到此处..." : "描述您的创意，或拖入图片..."}
               className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-2 px-1 text-sm font-medium outline-none"
             />
 
@@ -296,6 +326,15 @@ function GeneratorPage({
             </button>
             
             <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] dark:bg-white/5 p-1 rounded-full border border-gray-200/50 dark:border-white/5 shrink-0">
+              <select 
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="bg-transparent text-[9px] font-black uppercase tracking-tighter text-gray-500 border-none focus:ring-0 cursor-pointer px-2 outline-none"
+              >
+                <option value="gemini-3-pro-image">Gemini 3 Pro</option>
+                <option value="dall-e-3">DALL-E 3</option>
+              </select>
+              <div className="w-[1px] h-3 bg-gray-200 dark:bg-white/10 mx-0.5"></div>
               {[1, 2, 4, 8, 16].map(n => (
                 <button
                   key={n}
@@ -313,7 +352,7 @@ function GeneratorPage({
 
             <button 
               onClick={startGeneration}
-              disabled={!prompt.trim()}
+              disabled={!prompt.trim() && baseImages.length === 0}
               className="bg-black dark:bg-white text-white dark:text-black hover:opacity-90 disabled:bg-gray-100 dark:disabled:bg-white/5 disabled:text-gray-300 p-2.5 rounded-full font-bold transition-all px-6 shadow-lg active:scale-95 ml-1"
             >
               <Send className="w-4 h-4" />
@@ -431,7 +470,7 @@ function AppContent() {
   const [parallelCount, setParallelCount] = useState(4);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [baseImage, setBaseImage] = useState<string | null>(null);
+  const [baseImages, setBaseImages] = useState<string[]>([]);
   const [isDark, setIsDark] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isEnhancing, setIsEnhancing] = useState(false);
@@ -509,12 +548,12 @@ function AppContent() {
   };
 
   const startGeneration = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() && baseImages.length === 0) return;
 
     const timestamp = Date.now();
     const newTasks: Task[] = Array.from({ length: parallelCount }).map(() => ({
       id: Math.random().toString(36).substr(2, 9),
-      prompt: prompt,
+      prompt: prompt || "根据参考图生成",
       negative_prompt: negativePrompt,
       aspect_ratio: aspectRatio,
       status: 'pending',
@@ -523,18 +562,18 @@ function AppContent() {
     }));
 
     setTasks(prev => [...newTasks, ...prev]);
-    const currentPrompt = prompt;
+    const currentPrompt = prompt || "根据参考图生成";
     const currentNegative = negativePrompt;
-    const currentImage = baseImage;
+    const currentImages = [...baseImages];
     const currentRatio = aspectRatio;
     
     setPrompt('');
     setNegativePrompt('');
-    setBaseImage(null);
+    setBaseImages([]);
 
     let finishedCount = 0;
     newTasks.forEach(task => {
-      executeTask(task, currentPrompt, currentNegative, currentImage, currentRatio, model, () => {
+      executeTask(task, currentPrompt, currentNegative, currentImages, currentRatio, model, () => {
         finishedCount++;
         if (finishedCount === parallelCount) {
           fetchHistory();
@@ -548,7 +587,7 @@ function AppContent() {
     task: Task, 
     taskPrompt: string, 
     taskNegative: string,
-    taskImage: string | null, 
+    taskImages: string[], 
     taskRatio: string,
     taskModel: string,
     onFinish: (url?: string) => void
@@ -568,7 +607,7 @@ function AppContent() {
       const response = await axios.post('/v1/images/generations', {
         prompt: taskPrompt,
         negative_prompt: taskNegative,
-        image: taskImage,
+        images: taskImages,
         model: taskModel,
         n: 1,
         size: taskRatio
@@ -632,8 +671,6 @@ function AppContent() {
         isDark={isDark} 
         onToggleTheme={() => setIsDark(!isDark)} 
         onOpenConfig={() => setIsConfigOpen(true)} 
-        model={model}
-        setModel={setModel}
       />
 
       <div className="flex-1 flex flex-col relative">
@@ -651,8 +688,8 @@ function AppContent() {
               setModel={setModel}
               parallelCount={parallelCount}
               setParallelCount={setParallelCount}
-              baseImage={baseImage}
-              setBaseImage={setBaseImage}
+              baseImages={baseImages}
+              setBaseImages={setBaseImages}
               startGeneration={startGeneration}
               onImageClick={setSelectedImage}
               isEnhancing={isEnhancing}
