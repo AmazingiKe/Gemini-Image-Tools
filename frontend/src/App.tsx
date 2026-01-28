@@ -14,12 +14,14 @@ import {
   Moon,
   Sun,
   Archive,
-  RefreshCw
+  RefreshCw,
+  Layers
 } from 'lucide-react';
 import axios from 'axios';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
+import { TopBar } from './components/TopBar';
 
 // --- Types ---
 interface Task {
@@ -186,36 +188,36 @@ function GeneratorPage({
         </div>
       </main>
 
-      <footer className="p-8 sticky bottom-0 z-20">
-        <div className="max-w-4xl mx-auto space-y-4">
+      <footer className="p-4 sticky bottom-0 z-20">
+        <div className="max-w-3xl mx-auto space-y-3">
           <AnimatePresence>
             {showAdvanced && (
               <motion.div 
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-4 rounded-[1.5rem] border border-white/50 dark:border-white/10 shadow-xl space-y-4"
+                className="overflow-hidden bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-3 rounded-2xl border border-white/50 dark:border-white/10 shadow-xl space-y-3"
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">负向提示词 (Negative Prompt)</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">负向提示词</label>
                     <input 
                       type="text" 
                       value={negativePrompt}
                       onChange={(e) => setNegativePrompt(e.target.value)}
                       placeholder="你不希望在图像中看到什么..."
-                      className="w-full bg-gray-50 dark:bg-white/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-1 focus:ring-black dark:focus:ring-white transition-all outline-none text-black dark:text-white"
+                      className="w-full bg-gray-50 dark:bg-white/5 border-none rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-black dark:focus:ring-white transition-all outline-none text-black dark:text-white"
                     />
                   </div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">图像比例 (Aspect Ratio)</label>
-                      <div className="flex gap-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">图像比例</label>
+                      <div className="flex gap-1.5">
                         {['1024x1024', '1280x720', '720x1280', '1216x896'].map(ratio => (
                           <button 
                             key={ratio}
                             onClick={() => setAspectRatio(ratio)}
-                            className={`flex-1 py-2 text-[10px] font-bold rounded-xl border transition-all ${
+                            className={`flex-1 py-1.5 text-[9px] font-bold rounded-lg border transition-all ${
                               aspectRatio === ratio 
                               ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' 
                               : 'bg-white dark:bg-transparent text-gray-400 border-gray-200 dark:border-white/10 hover:border-gray-400'
@@ -233,27 +235,27 @@ function GeneratorPage({
           </AnimatePresence>
 
           {baseImage && (
-            <div className="flex items-center gap-4 bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-3 rounded-[1.5rem] border border-white/50 dark:border-white/10 w-fit shadow-2xl">
+            <div className="flex items-center gap-3 bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-2 rounded-2xl border border-white/50 dark:border-white/10 w-fit shadow-2xl">
               <div className="relative">
-                <img src={baseImage} className="w-16 h-16 object-cover rounded-xl shadow-inner" alt="Preview" />
+                <img src={baseImage} className="w-12 h-12 object-cover rounded-lg shadow-inner" alt="Preview" />
                 <button 
                   onClick={() => setBaseImage(null)}
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg flex items-center justify-center"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg flex items-center justify-center"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-2.5 h-2.5" />
                 </button>
               </div>
-              <div className="pr-4">
-                <p className="text-xs font-black uppercase tracking-widest text-black dark:text-white">参考图已锁定</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Reference Locked</p>
+              <div className="pr-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-black dark:text-white leading-none">参考图锁定</p>
+                <p className="text-[8px] text-gray-400 mt-0.5 uppercase tracking-tighter">Reference Locked</p>
               </div>
             </div>
           )}
           
-          <div className="bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-2 rounded-[2.5rem] border border-white/50 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex items-center gap-2 group transition-all duration-500 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus-within:bg-white/90 dark:focus-within:bg-black/90">
+          <div className="bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-1.5 rounded-full border border-white/50 dark:border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex items-center gap-1.5 group transition-all duration-500 focus-within:shadow-[0_10px_40px_rgba(0,0,0,0.12)] focus-within:bg-white/90 dark:focus-within:bg-black/90">
             <div className="flex items-center">
-              <label className="cursor-pointer p-4 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all text-gray-400 hover:text-black dark:hover:text-white">
-                <ImageIcon className="w-6 h-6" />
+              <label className="cursor-pointer p-2.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all text-gray-400 hover:text-black dark:hover:text-white">
+                <ImageIcon className="w-5 h-5" />
                 <input 
                   type="file" 
                   className="hidden" 
@@ -270,9 +272,9 @@ function GeneratorPage({
               </label>
               <button 
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className={`p-4 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white'}`}
+                className={`p-2.5 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white'}`}
               >
-                <Sliders className="w-6 h-6" />
+                <Sliders className="w-5 h-5" />
               </button>
             </div>
             
@@ -282,45 +284,39 @@ function GeneratorPage({
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && startGeneration()}
               placeholder="描述您的创意..."
-              className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-4 px-2 text-lg font-medium outline-none"
+              className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-2 px-1 text-sm font-medium outline-none"
             />
 
             <button 
               onClick={onEnhance}
               disabled={!prompt.trim() || isEnhancing}
-              className="p-4 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all disabled:opacity-30"
-              title="增强提示词"
+              className="p-2.5 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all disabled:opacity-30"
             >
-              {isEnhancing ? <RefreshCw className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
+              {isEnhancing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
             </button>
             
-            <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] dark:bg-white/5 p-1.5 rounded-full border border-gray-200/50 dark:border-white/5">
-              <select 
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="bg-transparent text-[11px] font-black uppercase tracking-tighter text-gray-500 border-none focus:ring-0 cursor-pointer px-3 outline-none"
-              >
-                <option value="gemini-3-pro-image">Gemini 3 Pro</option>
-                <option value="dall-e-3">DALL-E 3</option>
-              </select>
-              <div className="w-[1px] h-3 bg-gray-300 dark:bg-white/10 mx-1"></div>
-              <select 
-                value={parallelCount}
-                onChange={(e) => setParallelCount(Number(e.target.value))}
-                className="bg-transparent text-[11px] font-black text-gray-500 border-none focus:ring-0 cursor-pointer px-3 outline-none"
-              >
-                {[1, 2, 4, 8, 16].map(n => (
-                  <option key={n} value={n}>{n} 张</option>
-                ))}
-              </select>
+            <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] dark:bg-white/5 p-1 rounded-full border border-gray-200/50 dark:border-white/5 shrink-0">
+              {[1, 2, 4, 8, 16].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setParallelCount(n)}
+                  className={`w-7 h-7 rounded-full text-[9px] font-black transition-all ${
+                    parallelCount === n 
+                      ? 'bg-white dark:bg-white/20 shadow-sm text-black dark:text-white' 
+                      : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
             </div>
 
             <button 
               onClick={startGeneration}
               disabled={!prompt.trim()}
-              className="bg-black dark:bg-white text-white dark:text-black hover:opacity-90 disabled:bg-gray-100 dark:disabled:bg-white/5 disabled:text-gray-300 p-4 rounded-full font-bold transition-all px-8 shadow-xl active:scale-95 ml-2"
+              className="bg-black dark:bg-white text-white dark:text-black hover:opacity-90 disabled:bg-gray-100 dark:disabled:bg-white/5 disabled:text-gray-300 p-2.5 rounded-full font-bold transition-all px-6 shadow-lg active:scale-95 ml-1"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -632,51 +628,13 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-      <nav className="bg-white/80 dark:bg-black/80 backdrop-blur-2xl border-b border-gray-200/50 dark:border-white/10 px-6 h-14 flex justify-between items-center sticky top-0 z-30 transition-all">
-        <div className="flex items-center gap-3 w-1/4">
-          <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <div className="bg-black dark:bg-white p-1.5 rounded-lg shadow-sm">
-              <ImageIcon className="text-white dark:text-black w-4 h-4" />
-            </div>
-            <span className="font-bold tracking-tight text-sm text-black dark:text-white">Gemini Image Tools</span>
-          </Link>
-        </div>
-
-        <div className="flex items-center bg-[#f5f5f7] dark:bg-white/5 p-1 rounded-2xl border border-gray-200/50 dark:border-white/5 min-w-[240px] h-10 shadow-inner">
-          <Link 
-            to="/" 
-            className={`flex-1 flex items-center justify-center gap-2 px-6 rounded-xl text-xs font-bold transition-all duration-300 h-full ${
-              location.pathname === '/' ? 'bg-white dark:bg-white/10 shadow-sm text-black dark:text-white' : 'text-gray-400 hover:text-gray-500'
-            }`}
-          >
-            工作台
-          </Link>
-          <Link 
-            to="/history" 
-            className={`flex-1 flex items-center justify-center gap-2 px-6 rounded-xl text-xs font-bold transition-all duration-300 h-full ${
-              location.pathname === '/history' ? 'bg-white dark:bg-white/10 shadow-sm text-black dark:text-white' : 'text-gray-400 hover:text-gray-500'
-            }`}
-          >
-            历史库
-          </Link>
-        </div>
-
-        <div className="flex items-center justify-end gap-1 w-1/4">
-          <button 
-            onClick={() => setIsDark(!isDark)}
-            className="p-2.5 text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all"
-          >
-            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-          <button 
-            onClick={() => setIsConfigOpen(true)}
-            className="p-2.5 text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all"
-            title="系统设置"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-        </div>
-      </nav>
+      <TopBar 
+        isDark={isDark} 
+        onToggleTheme={() => setIsDark(!isDark)} 
+        onOpenConfig={() => setIsConfigOpen(true)} 
+        model={model}
+        setModel={setModel}
+      />
 
       <div className="flex-1 flex flex-col relative">
         <Routes>
@@ -706,86 +664,76 @@ function AppContent() {
       </div>
 
       {isConfigOpen && config && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-[#1d1d1f] rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100 dark:border-white/5"
+            className="bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 dark:border-white/5"
             onClick={e => e.stopPropagation()}
           >
-            <div className="px-10 py-8 border-b border-gray-50 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
+            <div className="px-6 py-5 border-b border-gray-50 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
               <div>
-                <h2 className="text-2xl font-black text-gray-800 dark:text-white tracking-tight">系统核心配置</h2>
-                <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mt-1">Advanced Control Panel</p>
+                <h2 className="text-lg font-black text-gray-800 dark:text-white tracking-tight leading-none">系统配置</h2>
+                <p className="text-[8px] text-gray-400 font-black uppercase tracking-[0.2em] mt-1">System Settings</p>
               </div>
               <button 
                 onClick={() => setIsConfigOpen(false)} 
-                className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 transition-all"
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 transition-all"
               >
-                <X className="w-6 h-6" />
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-10 space-y-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              <div className="space-y-6">
+            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              <div className="space-y-4">
                 <div className="group">
-                  <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">Gemini 代理端点 (Primary)</label>
+                  <label className="block text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 px-1">Gemini 代理端点</label>
                   <input 
                     type="text" 
-                    className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
+                    className="w-full bg-gray-50 dark:bg-black/40 border border-transparent rounded-xl px-4 py-2 text-xs font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                     value={config.gemini_proxy_url}
                     onChange={(e) => setConfig({...config, gemini_proxy_url: e.target.value})}
                   />
                 </div>
-                <div className="group">
-                  <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">备用代理端点 (Secondary)</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
-                    value={config.fallback_proxy_url || ''}
-                    onChange={(e) => setConfig({...config, fallback_proxy_url: e.target.value || null})}
-                    placeholder="Optional"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">API 授权密钥</label>
+                    <label className="block text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 px-1">API 授权密钥</label>
                     <input 
                       type="password" 
-                      className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
+                      className="w-full bg-gray-50 dark:bg-black/40 border border-transparent rounded-xl px-4 py-2 text-xs font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                       value={config.api_key}
                       onChange={(e) => setConfig({...config, api_key: e.target.value})}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">监听端口</label>
+                    <label className="block text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 px-1">监听端口</label>
                     <input 
                       type="number" 
-                      className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
+                      className="w-full bg-gray-50 dark:bg-black/40 border border-transparent rounded-xl px-4 py-2 text-xs font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                       value={config.port}
                       onChange={(e) => setConfig({...config, port: Number(e.target.value)})}
                     />
                   </div>
                 </div>
-                <div className="pt-8 border-t border-gray-100 dark:border-white/5">
-                  <div className="flex items-center gap-2 mb-6 text-blue-500">
-                    <Sliders className="w-4 h-4" />
-                    <h3 className="text-xs font-black uppercase tracking-[0.2em]">高级性能参数</h3>
+                <div className="pt-4 border-t border-gray-100 dark:border-white/5">
+                  <div className="flex items-center gap-1.5 mb-4 text-blue-500">
+                    <Sliders className="w-3 h-3" />
+                    <h3 className="text-[9px] font-black uppercase tracking-[0.2em]">性能参数</h3>
                   </div>
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">单次请求超时 (秒)</label>
+                      <label className="block text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 px-1">请求超时 (秒)</label>
                       <input 
                         type="number" 
-                        className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
+                        className="w-full bg-gray-50 dark:bg-black/40 border border-transparent rounded-xl px-4 py-2 text-xs font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                         value={config.timeout}
                         onChange={(e) => setConfig({...config, timeout: Number(e.target.value)})}
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">最大重试策略</label>
+                      <label className="block text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 px-1">最大重试</label>
                       <input 
                         type="number" 
-                        className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
+                        className="w-full bg-gray-50 dark:bg-black/40 border border-transparent rounded-xl px-4 py-2 text-xs font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                         value={config.retry_limit}
                         onChange={(e) => setConfig({...config, retry_limit: Number(e.target.value)})}
                       />
@@ -794,18 +742,18 @@ function AppContent() {
                 </div>
               </div>
             </div>
-            <div className="px-10 py-8 bg-gray-50/50 dark:bg-white/5 flex justify-end gap-4 border-t border-gray-50 dark:border-white/5">
+            <div className="px-6 py-5 bg-gray-50/50 dark:bg-white/5 flex justify-end gap-3 border-t border-gray-50 dark:border-white/5">
               <button 
                 onClick={() => setIsConfigOpen(false)}
-                className="px-8 py-3 text-xs font-black text-gray-400 hover:text-gray-600 transition-all"
+                className="px-4 py-2 text-[10px] font-black text-gray-400 hover:text-gray-600 transition-all"
               >
-                放弃修改
+                取消
               </button>
               <button 
                 onClick={() => handleUpdateConfig(config)}
-                className="bg-black dark:bg-white text-white dark:text-black px-10 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all shadow-xl hover:opacity-90 active:scale-95"
+                className="bg-black dark:bg-white text-white dark:text-black px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:opacity-90 active:scale-95"
               >
-                应用并保存
+                保存设置
               </button>
             </div>
           </motion.div>
