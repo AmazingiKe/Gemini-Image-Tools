@@ -1,0 +1,21 @@
+# IDE
+.vscode/
+.idea/
+
+# Node
+node_modules/
+dist/
+build/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Rust
+target/
+Cargo.lock
+
+# App
+.env
+storage/
+*.log
