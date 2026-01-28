@@ -8,17 +8,25 @@ import {
   Trash2, 
   Sliders, 
   History, 
-  LayoutDashboard,
-  ExternalLink,
-  ChevronRight
+  Sparkles,
+  Maximize2,
+  X,
+  Moon,
+  Sun,
+  Archive,
+  RefreshCw
 } from 'lucide-react';
 import axios from 'axios';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Toaster, toast } from 'sonner';
 
 // --- Types ---
 interface Task {
   id: string;
   prompt: string;
+  negative_prompt?: string;
+  aspect_ratio: string;
   status: 'pending' | 'generating' | 'completed' | 'failed';
   progress: number;
   resultUrl?: string;
@@ -47,119 +55,185 @@ interface GenerationGroup {
 
 function GeneratorPage({ 
   tasks, 
-  setTasks, 
   prompt, 
   setPrompt, 
+  negativePrompt,
+  setNegativePrompt,
+  aspectRatio,
+  setAspectRatio,
   model, 
   setModel, 
   parallelCount, 
   setParallelCount, 
-  baseImage, 
+  baseImage,
   setBaseImage, 
-  startGeneration 
+  startGeneration,
+  onImageClick,
+  isEnhancing,
+  onEnhance
 }: any) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   return (
     <>
-      {/* Main Task Area */}
       <main className="flex-1 p-8 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto">
           {tasks.length === 0 ? (
-            <div className="h-[60vh] flex flex-col items-center justify-center">
-              <div className="relative mb-8">
-                <div className="absolute -inset-10 bg-blue-100 rounded-full blur-3xl opacity-20 animate-pulse"></div>
-                <div className="w-24 h-24 bg-white rounded-3xl shadow-2xl flex items-center justify-center relative z-10 border border-gray-100">
-                  <ImageIcon className="w-10 h-10 text-black opacity-80" />
+            <div className="h-[50vh] flex flex-col items-center justify-center">
+              <motion.div 
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="relative mb-8"
+              >
+                <div className="absolute -inset-10 bg-blue-100 dark:bg-blue-900 rounded-full blur-3xl opacity-20 animate-pulse"></div>
+                <div className="w-24 h-24 bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-2xl flex items-center justify-center relative z-10 border border-gray-100 dark:border-white/5">
+                  <ImageIcon className="w-10 h-10 text-black dark:text-white opacity-80" />
                 </div>
-              </div>
-              <h2 className="text-3xl font-bold tracking-tight text-black mb-3">开启你的创作</h2>
-              <p className="text-gray-400 text-center max-w-sm font-medium leading-relaxed">
-                在下方输入您的创意描述，Gemini 将为您捕捉瞬间灵感
+              </motion.div>
+              <h2 className="text-3xl font-bold tracking-tight text-black dark:text-white mb-3 text-center">释放你的想象力</h2>
+              <p className="text-gray-400 dark:text-gray-500 text-center max-w-sm font-medium leading-relaxed">
+                输入您的绘图灵感，利用 Gemini 强大的生图能力为您捕捉瞬间美学。
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8 animate-in fade-in duration-700">
-              {tasks.map((task: Task) => (
-                <div key={task.id} className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden flex flex-col group hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-500 hover:-translate-y-1">
-                  <div className="aspect-square bg-[#f5f5f7] relative">
-                    {task.status === 'completed' && task.resultUrl ? (
-                      <>
-                        <img src={task.resultUrl} alt={task.prompt} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
-                          <a 
-                            href={task.resultUrl} 
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-3 bg-white/90 backdrop-blur rounded-full text-black hover:bg-white transition-all shadow-xl hover:scale-110"
-                          >
-                            <ExternalLink className="w-5 h-5" />
-                          </a>
-                          <a 
-                            href={task.resultUrl} 
-                            download 
-                            className="p-3 bg-black text-white rounded-full hover:bg-gray-800 transition-all shadow-xl hover:scale-110"
-                          >
-                            <Download className="w-5 h-5" />
-                          </a>
-                        </div>
-                      </>
-                    ) : task.status === 'failed' ? (
-                      <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
-                        <div className="bg-red-50 p-4 rounded-2xl mb-4">
-                          <Trash2 className="w-8 h-8 text-red-400" />
-                        </div>
-                        <p className="text-sm text-red-500 font-bold mb-2">生成失败</p>
-                        <div className="text-[10px] text-gray-400 bg-gray-50 p-3 rounded-xl w-full line-clamp-4 border border-gray-100 font-mono">
-                          {task.error}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center p-10">
-                        <div className="relative mb-8">
-                          <Loader2 className="w-14 h-14 text-black animate-spin opacity-20" />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                             <span className="text-[10px] font-black">{Math.round(task.progress)}%</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
+              <AnimatePresence mode="popLayout">
+                {tasks.map((task: Task) => (
+                  <motion.div 
+                    layout
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    key={task.id} 
+                    className="bg-white dark:bg-[#1d1d1f] rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 dark:border-white/5 overflow-hidden flex flex-col group hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-500 hover:-translate-y-1"
+                  >
+                    <div className="aspect-square bg-[#f5f5f7] dark:bg-black/20 relative">
+                      {task.status === 'completed' && task.resultUrl ? (
+                        <>
+                          <img 
+                            src={task.resultUrl} 
+                            alt={task.prompt} 
+                            className="w-full h-full object-cover cursor-zoom-in" 
+                            onClick={() => onImageClick(task.resultUrl)}
+                          />
+                          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
+                            <button 
+                              onClick={() => onImageClick(task.resultUrl)}
+                              className="p-3 bg-white/90 backdrop-blur rounded-full text-black hover:bg-white transition-all shadow-xl hover:scale-110"
+                            >
+                              <Maximize2 className="w-5 h-5" />
+                            </button>
+                            <a 
+                              href={task.resultUrl} 
+                              download 
+                              className="p-3 bg-black text-white rounded-full hover:bg-gray-800 transition-all shadow-xl hover:scale-110"
+                            >
+                              <Download className="w-5 h-5" />
+                            </a>
+                          </div>
+                        </>
+                      ) : task.status === 'failed' ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+                          <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-2xl mb-4 text-red-400">
+                            <Trash2 className="w-8 h-8" />
+                          </div>
+                          <p className="text-sm text-red-500 font-bold mb-2">生成失败</p>
+                          <div className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-black/40 p-3 rounded-xl w-full line-clamp-4 border border-gray-100 dark:border-white/5 font-mono">
+                            {task.error}
                           </div>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
-                          <div 
-                            className="bg-black h-1 rounded-full transition-all duration-1000 ease-in-out" 
-                            style={{ width: `${task.progress}%` }}
-                          ></div>
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center p-10">
+                          <div className="relative mb-8">
+                            <Loader2 className="w-14 h-14 text-black dark:text-white animate-spin opacity-20" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                               <span className="text-[10px] font-black">{Math.round(task.progress)}%</span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-white/10 rounded-full h-1 overflow-hidden">
+                            <div 
+                              className="bg-black dark:bg-white h-1 rounded-full transition-all duration-1000 ease-in-out" 
+                              style={{ width: `${task.progress}%` }}
+                            ></div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-6 flex-1 flex flex-col bg-white">
-                    <p className="text-sm text-[#1d1d1f] line-clamp-2 leading-relaxed font-semibold mb-4 opacity-90">
-                      {task.prompt}
-                    </p>
-                    <div className="mt-auto pt-4 flex justify-between items-center border-t border-gray-50">
-                      <span className="text-[10px] font-bold text-gray-300 tracking-wider">
-                        {new Date(task.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span className={`text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-widest ${
-                        task.status === 'completed' ? 'bg-green-50 text-green-600' :
-                        task.status === 'failed' ? 'bg-red-50 text-red-600' :
-                        'bg-gray-100 text-gray-400 animate-pulse'
-                      }`}>
-                        {task.status === 'completed' ? 'Done' :
-                         task.status === 'failed' ? 'Error' :
-                         'Processing'}
-                      </span>
+                      )}
                     </div>
-                  </div>
-                </div>
-              ))}
+                    <div className="p-6 flex-1 flex flex-col">
+                      <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-relaxed font-semibold mb-4 opacity-90">
+                        {task.prompt}
+                      </p>
+                      <div className="mt-auto pt-4 flex justify-between items-center border-t border-gray-50 dark:border-white/5">
+                        <span className="text-[10px] font-bold text-gray-300 dark:text-gray-600 tracking-wider">
+                          {task.aspect_ratio} • {new Date(task.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span className={`text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-widest ${
+                          task.status === 'completed' ? 'bg-green-50 dark:bg-green-900/20 text-green-600' :
+                          task.status === 'failed' ? 'bg-red-50 dark:bg-red-900/20 text-red-600' :
+                          'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-600 animate-pulse'
+                        }`}>
+                          {task.status === 'completed' ? 'Done' :
+                           task.status === 'failed' ? 'Error' :
+                           'Processing'}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           )}
         </div>
       </main>
 
-      {/* Floating Dock Style Input */}
       <footer className="p-8 sticky bottom-0 z-20">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-4">
+          <AnimatePresence>
+            {showAdvanced && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-4 rounded-[1.5rem] border border-white/50 dark:border-white/10 shadow-xl space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">负向提示词 (Negative Prompt)</label>
+                    <input 
+                      type="text" 
+                      value={negativePrompt}
+                      onChange={(e) => setNegativePrompt(e.target.value)}
+                      placeholder="你不希望在图像中看到什么..."
+                      className="w-full bg-gray-50 dark:bg-white/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-1 focus:ring-black dark:focus:ring-white transition-all outline-none text-black dark:text-white"
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">图像比例 (Aspect Ratio)</label>
+                      <div className="flex gap-2">
+                        {['1024x1024', '1280x720', '720x1280', '1216x896'].map(ratio => (
+                          <button 
+                            key={ratio}
+                            onClick={() => setAspectRatio(ratio)}
+                            className={`flex-1 py-2 text-[10px] font-bold rounded-xl border transition-all ${
+                              aspectRatio === ratio 
+                              ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' 
+                              : 'bg-white dark:bg-transparent text-gray-400 border-gray-200 dark:border-white/10 hover:border-gray-400'
+                            }`}
+                          >
+                            {ratio === '1024x1024' ? '1:1' : ratio === '1280x720' ? '16:9' : ratio === '720x1280' ? '9:16' : '4:3'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {baseImage && (
-            <div className="mb-4 flex items-center gap-4 bg-white/70 backdrop-blur-2xl p-3 rounded-[1.5rem] border border-white/50 w-fit shadow-2xl animate-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center gap-4 bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-3 rounded-[1.5rem] border border-white/50 dark:border-white/10 w-fit shadow-2xl">
               <div className="relative">
                 <img src={baseImage} className="w-16 h-16 object-cover rounded-xl shadow-inner" alt="Preview" />
                 <button 
@@ -170,29 +244,37 @@ function GeneratorPage({
                 </button>
               </div>
               <div className="pr-4">
-                <p className="text-xs font-black uppercase tracking-widest text-black">参考图已锁定</p>
+                <p className="text-xs font-black uppercase tracking-widest text-black dark:text-white">参考图已锁定</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">Reference Locked</p>
               </div>
             </div>
           )}
           
-          <div className="bg-white/70 backdrop-blur-2xl p-2 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex items-center gap-2 group transition-all duration-500 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus-within:bg-white/90">
-            <label className="cursor-pointer p-4 hover:bg-gray-100 rounded-2xl transition-all text-gray-400 hover:text-black">
-              <ImageIcon className="w-6 h-6" />
-              <input 
-                type="file" 
-                className="hidden" 
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setBaseImage(reader.result as string);
-                    reader.readAsDataURL(file);
-                  }
-                }}
-              />
-            </label>
+          <div className="bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-2 rounded-[2.5rem] border border-white/50 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex items-center gap-2 group transition-all duration-500 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus-within:bg-white/90 dark:focus-within:bg-black/90">
+            <div className="flex items-center">
+              <label className="cursor-pointer p-4 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all text-gray-400 hover:text-black dark:hover:text-white">
+                <ImageIcon className="w-6 h-6" />
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setBaseImage(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </label>
+              <button 
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className={`p-4 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white'}`}
+              >
+                <Sliders className="w-6 h-6" />
+              </button>
+            </div>
             
             <input 
               type="text" 
@@ -200,23 +282,32 @@ function GeneratorPage({
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && startGeneration()}
               placeholder="描述您的创意..."
-              className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] placeholder-gray-300 py-4 px-2 text-lg font-medium"
+              className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-4 px-2 text-lg font-medium outline-none"
             />
+
+            <button 
+              onClick={onEnhance}
+              disabled={!prompt.trim() || isEnhancing}
+              className="p-4 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all disabled:opacity-30"
+              title="增强提示词"
+            >
+              {isEnhancing ? <RefreshCw className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
+            </button>
             
-            <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] p-1.5 rounded-2xl border border-gray-200/50">
+            <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] dark:bg-white/5 p-1.5 rounded-full border border-gray-200/50 dark:border-white/5">
               <select 
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                className="bg-transparent text-[11px] font-black uppercase tracking-tighter text-gray-500 border-none focus:ring-0 cursor-pointer px-3"
+                className="bg-transparent text-[11px] font-black uppercase tracking-tighter text-gray-500 border-none focus:ring-0 cursor-pointer px-3 outline-none"
               >
                 <option value="gemini-3-pro-image">Gemini 3 Pro</option>
                 <option value="dall-e-3">DALL-E 3</option>
               </select>
-              <div className="w-[1px] h-3 bg-gray-300 mx-1"></div>
+              <div className="w-[1px] h-3 bg-gray-300 dark:bg-white/10 mx-1"></div>
               <select 
                 value={parallelCount}
                 onChange={(e) => setParallelCount(Number(e.target.value))}
-                className="bg-transparent text-[11px] font-black text-gray-500 border-none focus:ring-0 cursor-pointer px-3"
+                className="bg-transparent text-[11px] font-black text-gray-500 border-none focus:ring-0 cursor-pointer px-3 outline-none"
               >
                 {[1, 2, 4, 8, 16].map(n => (
                   <option key={n} value={n}>{n} 张</option>
@@ -227,7 +318,7 @@ function GeneratorPage({
             <button 
               onClick={startGeneration}
               disabled={!prompt.trim()}
-              className="bg-black text-white hover:bg-[#1d1d1f] disabled:bg-gray-100 disabled:text-gray-300 p-4 rounded-[1.5rem] font-bold transition-all px-8 shadow-xl hover:shadow-gray-200 active:scale-95"
+              className="bg-black dark:bg-white text-white dark:text-black hover:opacity-90 disabled:bg-gray-100 dark:disabled:bg-white/5 disabled:text-gray-300 p-4 rounded-full font-bold transition-all px-8 shadow-xl active:scale-95 ml-2"
             >
               <Send className="w-5 h-5" />
             </button>
@@ -237,13 +328,29 @@ function GeneratorPage({
     </>
   );
 }
-    </>
-  );
-}
 
 function HistoryPage({ history, onClear }: { history: GenerationGroup[], onClear: () => void }) {
+  const downloadZip = async (timestamp: number) => {
+    toast.promise(
+      axios.get(`/api/export-zip?timestamp=${timestamp}`, { responseType: 'blob' })
+        .then(response => {
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `images-${timestamp}.zip`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }),
+      {
+        loading: '正在打包压缩...',
+        success: '打包下载成功！',
+        error: '打包失败',
+      }
+    );
+  };
+
   if (history.length === 0) {
-// ...
     return (
       <main className="flex-1 p-8 flex flex-col items-center justify-center text-gray-400">
         <History className="w-16 h-16 mb-4 opacity-20" />
@@ -254,51 +361,56 @@ function HistoryPage({ history, onClear }: { history: GenerationGroup[], onClear
 
   return (
     <main className="flex-1 p-8 overflow-y-auto max-w-7xl mx-auto w-full">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="bg-blue-600 p-2 rounded-lg">
-          <History className="text-white w-6 h-6" />
+      <div className="flex items-center gap-3 mb-12">
+        <div className="bg-black dark:bg-white p-3 rounded-2xl shadow-xl">
+          <History className="text-white dark:text-black w-6 h-6" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">创作历史库</h2>
-          <p className="text-sm text-gray-400">所有已成功生成的创意结晶</p>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">创意库</h2>
+          <p className="text-sm text-gray-400 font-medium">Capture your past inspirations</p>
         </div>
         <button 
           onClick={onClear}
-          className="ml-auto flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors border border-red-100"
+          className="ml-auto flex items-center gap-2 px-5 py-2.5 bg-red-50 dark:bg-red-900/10 text-red-600 rounded-2xl text-xs font-bold hover:bg-red-100 transition-all border border-red-100 dark:border-red-900/20"
         >
           <Trash2 className="w-4 h-4" />
           清空历史
         </button>
       </div>
 
-      <div className="space-y-12">
+      <div className="space-y-16">
         {history.map((group, idx) => (
-          <div key={idx} className="group">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="h-px flex-1 bg-gray-100"></div>
-              <span className="text-xs font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full border border-gray-100">
+          <div key={idx} className="group/group">
+            <div className="flex items-center gap-6 mb-6">
+              <span className="text-[10px] font-black text-gray-300 dark:text-gray-700 uppercase tracking-[0.3em] whitespace-nowrap">
                 {new Date(group.timestamp).toLocaleString()}
               </span>
-              <div className="h-px flex-1 bg-gray-100"></div>
+              <div className="h-[1px] flex-1 bg-gray-100 dark:bg-white/5"></div>
+              <button 
+                onClick={() => downloadZip(group.timestamp)}
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#1d1d1f] rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-black dark:hover:text-white border border-gray-100 dark:border-white/5 shadow-sm transition-all"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                打包下载
+              </button>
             </div>
             
-            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:border-blue-100 transition-colors">
-              <div className="mb-6 flex justify-between items-start gap-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-gray-800 mb-1 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                    {group.prompt}
-                  </h3>
-                  <p className="text-sm text-gray-400">共生成 {group.images.length} 张图片</p>
+            <div className="bg-white dark:bg-[#1d1d1f] rounded-[2.5rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.02)] border border-gray-50 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10 transition-all duration-500">
+              <div className="mb-8">
+                <h3 className="text-xl font-bold text-gray-800 dark:text-[#f5f5f7] mb-2 leading-relaxed">
+                  {group.prompt}
+                </h3>
+                <div className="flex items-center gap-4 text-xs font-medium text-gray-400">
+                  <span className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> {group.images.length} 张图片</span>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                 {group.images.map((url, imgIdx) => (
-                  <div key={imgIdx} className="aspect-square rounded-2xl overflow-hidden relative group/img cursor-pointer border border-gray-50">
-                    <img src={url} alt={group.prompt} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <a href={url} download className="p-2 bg-white rounded-full text-gray-800 hover:scale-110 transition-transform shadow-lg">
+                  <div key={imgIdx} className="aspect-square rounded-3xl overflow-hidden relative group/img cursor-pointer border border-gray-50 dark:border-white/5 shadow-sm">
+                    <img src={url} alt={group.prompt} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-700" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                      <a href={url} download className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform shadow-xl">
                         <Download className="w-4 h-4" />
                       </a>
                     </div>
@@ -313,23 +425,37 @@ function HistoryPage({ history, onClear }: { history: GenerationGroup[], onClear
   );
 }
 
-// --- Main App Component ---
-
 function AppContent() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [history, setHistory] = useState<GenerationGroup[]>([]);
   const [prompt, setPrompt] = useState('');
+  const [negativePrompt, setNegativePrompt] = useState('');
+  const [aspectRatio, setAspectRatio] = useState('1024x1024');
   const [model, setModel] = useState('gemini-3-pro-image');
   const [parallelCount, setParallelCount] = useState(4);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [baseImage, setBaseImage] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
     fetchConfig();
     fetchHistory();
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setIsDark(true);
+    }
   }, []);
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
 
   const fetchConfig = async () => {
     try {
@@ -354,8 +480,9 @@ function AppContent() {
       try {
         await axios.delete('/api/history');
         setHistory([]);
+        toast.success('历史已清空');
       } catch (error) {
-        alert('清空历史失败');
+        toast.error('清空历史失败');
       }
     }
   };
@@ -365,8 +492,23 @@ function AppContent() {
       await axios.post('/api/config', newConfig);
       setConfig(newConfig);
       setIsConfigOpen(false);
+      toast.success('配置已更新');
     } catch (error) {
-      alert('更新配置失败');
+      toast.error('更新配置失败');
+    }
+  };
+
+  const handleEnhance = async () => {
+    if (!prompt.trim() || isEnhancing) return;
+    setIsEnhancing(true);
+    try {
+      const response = await axios.post('/api/enhance-prompt', { prompt });
+      setPrompt(response.data);
+      toast.success('提示词已增强');
+    } catch (error) {
+      toast.error('增强提示词失败');
+    } finally {
+      setIsEnhancing(false);
     }
   };
 
@@ -377,6 +519,8 @@ function AppContent() {
     const newTasks: Task[] = Array.from({ length: parallelCount }).map(() => ({
       id: Math.random().toString(36).substr(2, 9),
       prompt: prompt,
+      negative_prompt: negativePrompt,
+      aspect_ratio: aspectRatio,
       status: 'pending',
       progress: 0,
       timestamp: timestamp
@@ -384,22 +528,21 @@ function AppContent() {
 
     setTasks(prev => [...newTasks, ...prev]);
     const currentPrompt = prompt;
+    const currentNegative = negativePrompt;
     const currentImage = baseImage;
+    const currentRatio = aspectRatio;
+    
     setPrompt('');
+    setNegativePrompt('');
     setBaseImage(null);
 
-    // Track results to add to history when finished
-    const results: string[] = [];
     let finishedCount = 0;
-
     newTasks.forEach(task => {
-      executeTask(task, currentPrompt, currentImage, model, (url) => {
+      executeTask(task, currentPrompt, currentNegative, currentImage, currentRatio, model, () => {
         finishedCount++;
-        if (url) results.push(url);
-        
-        // When all tasks in this batch are done, refresh history from backend
         if (finishedCount === parallelCount) {
           fetchHistory();
+          toast.success('生成任务已全部完成');
         }
       });
     });
@@ -408,7 +551,9 @@ function AppContent() {
   const executeTask = async (
     task: Task, 
     taskPrompt: string, 
+    taskNegative: string,
     taskImage: string | null, 
+    taskRatio: string,
     taskModel: string,
     onFinish: (url?: string) => void
   ) => {
@@ -418,18 +563,19 @@ function AppContent() {
       const progressInterval = setInterval(() => {
         setTasks(prev => prev.map(t => {
           if (t.id === task.id && t.status === 'generating' && t.progress < 90) {
-            return { ...t, progress: t.progress + Math.random() * 3 };
+            return { ...t, progress: t.progress + Math.random() * 2 };
           }
           return t;
         }));
-      }, 1500);
+      }, 2000);
 
       const response = await axios.post('/v1/images/generations', {
         prompt: taskPrompt,
+        negative_prompt: taskNegative,
         image: taskImage,
         model: taskModel,
         n: 1,
-        size: "1024x1024"
+        size: taskRatio
       });
 
       clearInterval(progressInterval);
@@ -452,47 +598,79 @@ function AppContent() {
     }
   };
 
-  const clearTasks = () => setTasks([]);
-
   return (
-    <div className="min-h-screen bg-[#f5f5f7] flex flex-col font-sans text-[#1d1d1f] selection:bg-blue-100">
-      {/* Apple Style Top Navigation */}
-      <nav className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 px-6 h-14 flex justify-between items-center sticky top-0 z-30 transition-all">
-        {/* Left Section: Brand */}
+    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] flex flex-col font-sans text-[#1d1d1f] dark:text-[#f5f5f7] selection:bg-blue-100 transition-colors duration-700">
+      <Toaster position="top-center" richColors theme={isDark ? 'dark' : 'light'} />
+      
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-4"
+            onClick={() => setSelectedImage(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-7xl max-h-[90vh] w-full flex items-center justify-center"
+              onClick={e => e.stopPropagation()}
+            >
+              <img src={selectedImage} className="max-w-full max-h-[90vh] object-contain shadow-2xl rounded-2xl" alt="Fullscreen" />
+              <div className="absolute top-4 right-4 flex gap-4">
+                <a href={selectedImage} download className="p-4 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-all">
+                  <Download className="w-6 h-6" />
+                </a>
+                <button onClick={() => setSelectedImage(null)} className="p-4 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-all">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <nav className="bg-white/80 dark:bg-black/80 backdrop-blur-2xl border-b border-gray-200/50 dark:border-white/10 px-6 h-14 flex justify-between items-center sticky top-0 z-30 transition-all">
         <div className="flex items-center gap-3 w-1/4">
           <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <div className="bg-black p-1.5 rounded-lg shadow-sm">
-              <ImageIcon className="text-white w-4 h-4" />
+            <div className="bg-black dark:bg-white p-1.5 rounded-lg shadow-sm">
+              <ImageIcon className="text-white dark:text-black w-4 h-4" />
             </div>
-            <span className="font-semibold tracking-tight text-sm">Gemini Factory</span>
+            <span className="font-bold tracking-tight text-sm text-black dark:text-white">Gemini Image Tools</span>
           </Link>
         </div>
 
-        {/* Center Section: Navigation Segmented Control */}
-        <div className="flex items-center bg-[#f5f5f7] p-1 rounded-xl border border-gray-200/50 min-w-[200px] h-9">
+        <div className="flex items-center bg-[#f5f5f7] dark:bg-white/5 p-1 rounded-2xl border border-gray-200/50 dark:border-white/5 min-w-[240px] h-10 shadow-inner">
           <Link 
             to="/" 
-            className={`flex-1 flex items-center justify-center gap-2 px-4 rounded-lg text-xs font-bold transition-all duration-200 h-full ${
-              location.pathname === '/' ? 'bg-white shadow-sm text-black' : 'text-gray-400 hover:text-gray-600'
+            className={`flex-1 flex items-center justify-center gap-2 px-6 rounded-xl text-xs font-bold transition-all duration-300 h-full ${
+              location.pathname === '/' ? 'bg-white dark:bg-white/10 shadow-sm text-black dark:text-white' : 'text-gray-400 hover:text-gray-500'
             }`}
           >
             工作台
           </Link>
           <Link 
             to="/history" 
-            className={`flex-1 flex items-center justify-center gap-2 px-4 rounded-lg text-xs font-bold transition-all duration-200 h-full ${
-              location.pathname === '/history' ? 'bg-white shadow-sm text-black' : 'text-gray-400 hover:text-gray-600'
+            className={`flex-1 flex items-center justify-center gap-2 px-6 rounded-xl text-xs font-bold transition-all duration-300 h-full ${
+              location.pathname === '/history' ? 'bg-white dark:bg-white/10 shadow-sm text-black dark:text-white' : 'text-gray-400 hover:text-gray-500'
             }`}
           >
             历史库
           </Link>
         </div>
 
-        {/* Right Section: Actions */}
-        <div className="flex items-center justify-end gap-3 w-1/4">
+        <div className="flex items-center justify-end gap-1 w-1/4">
+          <button 
+            onClick={() => setIsDark(!isDark)}
+            className="p-2.5 text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all"
+          >
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
           <button 
             onClick={() => setIsConfigOpen(true)}
-            className="p-2 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-all"
+            className="p-2.5 text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-all"
             title="系统设置"
           >
             <Settings className="w-5 h-5" />
@@ -505,9 +683,12 @@ function AppContent() {
           <Route path="/" element={
             <GeneratorPage 
               tasks={tasks}
-              setTasks={setTasks}
               prompt={prompt}
               setPrompt={setPrompt}
+              negativePrompt={negativePrompt}
+              setNegativePrompt={setNegativePrompt}
+              aspectRatio={aspectRatio}
+              setAspectRatio={setAspectRatio}
               model={model}
               setModel={setModel}
               parallelCount={parallelCount}
@@ -515,99 +696,96 @@ function AppContent() {
               baseImage={baseImage}
               setBaseImage={setBaseImage}
               startGeneration={startGeneration}
+              onImageClick={setSelectedImage}
+              isEnhancing={isEnhancing}
+              onEnhance={handleEnhance}
             />
           } />
-                  <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
-                </Routes>
-          
+          <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
+        </Routes>
       </div>
 
-      {/* Config Modal */}
       {isConfigOpen && config && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-gray-100 scale-in-center">
-            <div className="px-8 py-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-[#1d1d1f] rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100 dark:border-white/5"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-10 py-8 border-b border-gray-50 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">系统核心配置</h2>
-                <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest">System Core Settings</p>
+                <h2 className="text-2xl font-black text-gray-800 dark:text-white tracking-tight">系统核心配置</h2>
+                <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mt-1">Advanced Control Panel</p>
               </div>
               <button 
                 onClick={() => setIsConfigOpen(false)} 
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 transition-colors"
+                className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 transition-all"
               >
-                &times;
+                <X className="w-6 h-6" />
               </button>
             </div>
-            <div className="p-8 space-y-6">
-              <div className="space-y-4">
+            <div className="p-10 space-y-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <div className="space-y-6">
                 <div className="group">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Gemini 代理端点</label>
+                  <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">Gemini 代理端点 (Primary)</label>
                   <input 
                     type="text" 
-                    className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
+                    className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                     value={config.gemini_proxy_url}
                     onChange={(e) => setConfig({...config, gemini_proxy_url: e.target.value})}
                   />
                 </div>
                 <div className="group">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">备用代理端点 (可选)</label>
+                  <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">备用代理端点 (Secondary)</label>
                   <input 
                     type="text" 
-                    className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
+                    className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                     value={config.fallback_proxy_url || ''}
                     onChange={(e) => setConfig({...config, fallback_proxy_url: e.target.value || null})}
-                    placeholder="None"
+                    placeholder="Optional"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="col-span-2">
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">API 授权密钥</label>
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">API 授权密钥</label>
                     <input 
                       type="password" 
-                      className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
+                      className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                       value={config.api_key}
                       onChange={(e) => setConfig({...config, api_key: e.target.value})}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">监听端口</label>
+                    <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">监听端口</label>
                     <input 
                       type="number" 
-                      className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
+                      className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                       value={config.port}
                       onChange={(e) => setConfig({...config, port: Number(e.target.value)})}
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">本地图像存储根路径</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
-                    value={config.storage_path}
-                    onChange={(e) => setConfig({...config, storage_path: e.target.value})}
-                  />
-                </div>
-
-                <div className="pt-4 border-t border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <Sliders className="w-3 h-3" /> 高级请求控制 (Advanced)
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="pt-8 border-t border-gray-100 dark:border-white/5">
+                  <div className="flex items-center gap-2 mb-6 text-blue-500">
+                    <Sliders className="w-4 h-4" />
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em]">高级性能参数</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">单次请求超时 (秒)</label>
+                      <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">单次请求超时 (秒)</label>
                       <input 
                         type="number" 
-                        className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
+                        className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                         value={config.timeout}
                         onChange={(e) => setConfig({...config, timeout: Number(e.target.value)})}
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">最大重试次数</label>
+                      <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 px-1">最大重试策略</label>
                       <input 
                         type="number" 
-                        className="w-full bg-gray-50 border-2 border-gray-50 rounded-2xl px-5 py-3 text-sm font-medium focus:bg-white focus:border-blue-500 transition-all outline-none"
+                        className="w-full bg-gray-50 dark:bg-black/40 border-2 border-transparent rounded-2xl px-6 py-4 text-sm font-bold focus:bg-white dark:focus:bg-black focus:border-blue-500 transition-all outline-none dark:text-white"
                         value={config.retry_limit}
                         onChange={(e) => setConfig({...config, retry_limit: Number(e.target.value)})}
                       />
@@ -616,21 +794,21 @@ function AppContent() {
                 </div>
               </div>
             </div>
-            <div className="px-8 py-6 bg-gray-50/50 flex justify-end gap-4 border-t border-gray-50">
+            <div className="px-10 py-8 bg-gray-50/50 dark:bg-white/5 flex justify-end gap-4 border-t border-gray-50 dark:border-white/5">
               <button 
                 onClick={() => setIsConfigOpen(false)}
-                className="px-6 py-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
+                className="px-8 py-3 text-xs font-black text-gray-400 hover:text-gray-600 transition-all"
               >
-                取消
+                放弃修改
               </button>
               <button 
                 onClick={() => handleUpdateConfig(config)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-100"
+                className="bg-black dark:bg-white text-white dark:text-black px-10 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all shadow-xl hover:opacity-90 active:scale-95"
               >
-                保存变更
+                应用并保存
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </div>

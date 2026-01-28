@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageGenerationRequest {
     pub prompt: String,
+    pub negative_prompt: Option<String>,
     pub image: Option<String>,
     #[serde(default = "default_model")]
     pub model: String,
@@ -32,14 +33,7 @@ pub struct ImageData {
     pub revised_prompt: Option<String>,
 }
 
-// --- Chat Completion Structures (for upstream proxy) ---
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChatCompletionRequest {
-    pub model: String,
-    pub messages: Vec<ChatMessage>,
-    pub size: Option<String>,
-}
+// --- Chat Completion Structures (for upstream proxy response parsing) ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {

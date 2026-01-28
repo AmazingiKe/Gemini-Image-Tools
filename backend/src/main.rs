@@ -1,7 +1,7 @@
 use axum::{
-    extract::{Json, State},
+    extract::{Json, State, Query},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
@@ -11,22 +11,25 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use std::io::Write;
+use zip::write::SimpleFileOptions;
+use std::path::Path;
 
 mod models;
 mod storage;
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GenerationGroup {
-    pub prompt: String,
-    pub timestamp: u64,
-    pub images: Vec<String>,
-}
 
 #[derive(Clone)]
 struct AppState {
     config: Arc<RwLock<Config>>,
     history: Arc<RwLock<Vec<GenerationGroup>>>,
     client: reqwest::Client,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GenerationGroup {
+    pub prompt: String,
+    pub timestamp: u64,
+    pub images: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -111,6 +114,8 @@ async fn main() {
         .route("/v1/images/generations", post(generate_image))
         .route("/api/config", get(get_config).post(update_config))
         .route("/api/history", get(get_history).delete(clear_history))
+        .route("/api/enhance-prompt", post(enhance_prompt))
+        .route("/api/export-zip", get(export_zip))
         .route("/health", get(|| async { "OK" }))
         .nest_service("/images", ServeDir::new(&storage_path))
         .layer(tower_http::trace::TraceLayer::new_for_http())
@@ -151,6 +156,105 @@ async fn clear_history(State(state): State<AppState>) -> impl IntoResponse {
     StatusCode::OK
 }
 
+#[derive(Deserialize)]
+struct EnhanceRequest {
+    prompt: String,
+}
+
+async fn enhance_prompt(
+    State(state): State<AppState>,
+    Json(payload): Json<EnhanceRequest>,
+) -> impl IntoResponse {
+    let (url_str, api_key) = {
+        let config = state.config.read().await;
+        (config.gemini_proxy_url.clone(), config.api_key.clone())
+    };
+
+    let url = if url_str.contains("/v1") {
+        format!("{}/chat/completions", url_str.trim_end_matches('/'))
+    } else {
+        format!("{}/v1/chat/completions", url_str.trim_end_matches('/'))
+    };
+
+    let chat_payload = serde_json::json!({
+        "model": "gemini-1.5-flash", // Use a faster model for enhancement
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a professional image prompt engineer. Expand the user's simple prompt into a detailed, high-quality, artistic prompt for an image generator. Keep the core idea but add details about style, lighting, composition, and mood. Output ONLY the enhanced prompt text."
+            },
+            {
+                "role": "user",
+                "content": payload.prompt
+            }
+        ]
+    });
+
+    let response = state.client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&chat_payload)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                let data: models::openai::ChatCompletionResponse = resp.json().await.unwrap();
+                if let Some(choice) = data.choices.first() {
+                    return (StatusCode::OK, choice.message.content.clone()).into_response();
+                }
+            }
+            (StatusCode::BAD_GATEWAY, "Failed to enhance prompt").into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ExportZipQuery {
+    timestamp: u64,
+}
+
+async fn export_zip(
+    State(state): State<AppState>,
+    Query(query): Query<ExportZipQuery>,
+) -> impl IntoResponse {
+    let history = state.history.read().await;
+    let group = history.iter().find(|g| g.timestamp == query.timestamp);
+
+    if let Some(group) = group {
+        let storage_path = {
+            let config = state.config.read().await;
+            config.storage_path.clone()
+        };
+
+        let mut buf = Vec::new();
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+        for img_url in &group.images {
+            if let Some(filename) = img_url.split('/').last() {
+                let path = Path::new(&storage_path).join(filename);
+                if let Ok(data) = tokio::fs::read(path).await {
+                    let _ = zip.start_file(filename, options);
+                    let _ = zip.write_all(&data);
+                }
+            }
+        }
+
+        let _ = zip.finish();
+
+        Response::builder()
+            .header("Content-Type", "application/zip")
+            .header("Content-Disposition", format!("attachment; filename=\"images-{}.zip\"", query.timestamp))
+            .body(axum::body::Body::from(buf))
+            .unwrap()
+    } else {
+        (StatusCode::NOT_FOUND, "History group not found").into_response()
+    }
+}
+
 async fn generate_image(
     State(state): State<AppState>,
     Json(payload): Json<models::openai::ImageGenerationRequest>,
@@ -186,6 +290,7 @@ async fn generate_image(
             (StatusCode::OK, Json(data)).into_response()
         },
         Err(e) => {
+            tracing::warn!("主代理失败: {}, 尝试备用代理...", e);
             if let Some(fallback) = fallback_url {
                 match perform_generation(&state, &fallback, &api_key, &payload, &storage_path, timeout, retry_limit).await {
                     Ok(data) => {
@@ -205,6 +310,11 @@ async fn generate_image(
                     Err(e) => (StatusCode::BAD_GATEWAY, format!("主备代理均失败: {}", e)).into_response()
                 }
             } else {
+                (StatusCode::BAD_GATEWAY, format!("请求失败且无备用代理: {}", e)).into_response()
+            }
+        }
+    }
+}
 
 async fn perform_generation(
     state: &AppState,
@@ -230,13 +340,25 @@ async fn perform_generation(
     }
 
     let mut messages = Vec::new();
+    
+    // Combine prompt and negative prompt
+    let full_prompt = if let Some(neg) = &payload.negative_prompt {
+        if !neg.is_empty() {
+            format!("{}\n[Negative Prompt: {}]", payload.prompt, neg)
+        } else {
+            payload.prompt.clone()
+        }
+    } else {
+        payload.prompt.clone()
+    };
+
     let content = if let Some(img_data) = &payload.image {
         serde_json::json!([
-            { "type": "text", "text": payload.prompt },
+            { "type": "text", "text": full_prompt },
             { "type": "image_url", "image_url": { "url": img_data } }
         ])
     } else {
-        serde_json::json!(payload.prompt)
+        serde_json::json!(full_prompt)
     };
 
     messages.push(models::openai::ChatMessage {
@@ -244,18 +366,17 @@ async fn perform_generation(
         content,
     });
 
-    let chat_payload = models::openai::ChatCompletionRequest {
-        model: payload.model.clone(),
-        messages,
-        size: Some(payload.size.clone()),
-    };
+    let chat_payload = serde_json::json!({
+        "model": payload.model,
+        "messages": messages,
+        "size": payload.size
+    });
 
     for attempt in 0..retry_limit {
         tracing::info!("🚀 正在尝试生成图像 [第 {}/{} 次] | 目标: {}", attempt + 1, retry_limit, url);
         
         if attempt > 0 {
             let delay = 2;
-            tracing::warn!("等待 {} 秒后进行下一次重试...", delay);
             tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
         }
 
@@ -271,68 +392,38 @@ async fn perform_generation(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    tracing::info!("✅ 上游请求成功！正在解析内容...");
-                    let chat_resp: models::openai::ChatCompletionResponse = resp.json().await.map_err(|e| {
-                        tracing::error!("❌ 解析上游 JSON 失败: {}", e);
-                        e.to_string()
-                    })?;
-                    
+                    let chat_resp: models::openai::ChatCompletionResponse = resp.json().await.map_err(|e| e.to_string())?;
                     let mut image_data_vec = Vec::new();
                     
                     for choice in chat_resp.choices {
                         let content = choice.message.content;
-                        tracing::debug!("收到响应内容: {}", content);
-                        
-                        let url = extract_url(&content).ok_or_else(|| {
-                            tracing::error!("❌ 响应文本中找不到图片地址: {}", content);
-                            format!("无法解析响应中的图片地址: {}", content)
-                        })?;
+                        let url = extract_url(&content).ok_or_else(|| format!("无法解析图片地址: {}", content))?;
 
-                        tracing::info!("🔗 提取到图片 URL: {}", url);
-                        
                         let mut item = models::openai::ImageData {
                             url: Some(url.clone()),
                             b64_json: None,
                             revised_prompt: Some(content.clone()),
                         };
 
-                        tracing::debug!("正在将图片下载到本地存储 (目录: {})", storage_path);
-                        match storage::download_and_save_image(&url, storage_path, &state.client).await {
-                            Ok(filename) => {
-                                tracing::info!("💾 图片保存成功: {}", filename);
-                                item.url = Some(format!("/images/{}", filename));
-                            },
-                            Err(e) => {
-                                tracing::error!("❌ 下载或保存图片失败: {}. 将直接使用原始 URL.", e);
-                            }
+                        if let Ok(filename) = storage::download_and_save_image(&url, storage_path, &state.client).await {
+                            item.url = Some(format!("/images/{}", filename));
                         }
                         
                         image_data_vec.push(item);
                     }
                     
-                    if image_data_vec.is_empty() {
-                        tracing::warn!("⚠️ 响应成功但没有生成任何图片数据，准备重试...");
-                        continue;
-                    }
-
                     return Ok(models::openai::ImageResponse {
                         created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                         data: image_data_vec,
                     });
                 } else {
                     let error_text = resp.text().await.unwrap_or_default();
-                    tracing::error!("❌ 上游返回错误 ({}) | 详情: {}", status, error_text);
-                    
-                    if status.as_u16() != 400 {
-                        tracing::warn!("状态码 {} 可能是临时性错误，继续重试...", status);
-                        continue;
-                    }
+                    if status.as_u16() != 400 { continue; }
                     return Err(format!("上游返回错误 ({}): {}", status, error_text));
                 }
             }
             Err(e) => {
-                tracing::error!("📡 网络请求异常 (超时或连接断开): {}", e);
-                if attempt == retry_limit - 1 { return Err(format!("最终尝试失败: {}", e)); }
+                if attempt == retry_limit - 1 { return Err(e.to_string()); }
                 continue;
             }
         }
