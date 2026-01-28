@@ -15,9 +15,17 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod models;
 mod storage;
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GenerationGroup {
+    pub prompt: String,
+    pub timestamp: u64,
+    pub images: Vec<String>,
+}
+
 #[derive(Clone)]
 struct AppState {
     config: Arc<RwLock<Config>>,
+    history: Arc<RwLock<Vec<GenerationGroup>>>,
     client: reqwest::Client,
 }
 
@@ -68,6 +76,17 @@ async fn save_config(config: &Config) -> std::io::Result<()> {
     tokio::fs::write("config.json", serde_json::to_string_pretty(config).unwrap()).await
 }
 
+async fn load_history() -> Vec<GenerationGroup> {
+    match tokio::fs::read_to_string("history.json").await {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+async fn save_history(history: &[GenerationGroup]) -> std::io::Result<()> {
+    tokio::fs::write("history.json", serde_json::to_string_pretty(history).unwrap()).await
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
@@ -76,11 +95,13 @@ async fn main() {
         .init();
 
     let config = load_config().await;
+    let history = load_history().await;
     let port = config.port;
     let storage_path = config.storage_path.clone();
     
     let state = AppState {
         config: Arc::new(RwLock::new(config)),
+        history: Arc::new(RwLock::new(history)),
         client: reqwest::Client::new(),
     };
 
@@ -89,6 +110,7 @@ async fn main() {
     let app = Router::new()
         .route("/v1/images/generations", post(generate_image))
         .route("/api/config", get(get_config).post(update_config))
+        .route("/api/history", get(get_history).delete(clear_history))
         .route("/health", get(|| async { "OK" }))
         .nest_service("/images", ServeDir::new(&storage_path))
         .layer(tower_http::trace::TraceLayer::new_for_http())
@@ -117,6 +139,18 @@ async fn update_config(
     StatusCode::OK
 }
 
+async fn get_history(State(state): State<AppState>) -> impl IntoResponse {
+    let history = state.history.read().await;
+    Json(history.clone())
+}
+
+async fn clear_history(State(state): State<AppState>) -> impl IntoResponse {
+    let mut history = state.history.write().await;
+    history.clear();
+    let _ = save_history(&history).await;
+    StatusCode::OK
+}
+
 async fn generate_image(
     State(state): State<AppState>,
     Json(payload): Json<models::openai::ImageGenerationRequest>,
@@ -136,20 +170,41 @@ async fn generate_image(
     tracing::info!("收到图像生成请求: {}", payload.prompt);
 
     match perform_generation(&state, &proxy_url, &api_key, &payload, &storage_path, timeout, retry_limit).await {
-        Ok(data) => (StatusCode::OK, Json(data)).into_response(),
+        Ok(data) => {
+            // 保存到历史记录
+            let images: Vec<String> = data.data.iter().filter_map(|d| d.url.clone()).collect();
+            if !images.is_empty() {
+                let mut history = state.history.write().await;
+                history.insert(0, GenerationGroup {
+                    prompt: payload.prompt.clone(),
+                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() * 1000,
+                    images,
+                });
+                if history.len() > 100 { history.truncate(100); }
+                let _ = save_history(&history).await;
+            }
+            (StatusCode::OK, Json(data)).into_response()
+        },
         Err(e) => {
-            tracing::warn!("主代理失败: {}, 尝试备用代理...", e);
             if let Some(fallback) = fallback_url {
                 match perform_generation(&state, &fallback, &api_key, &payload, &storage_path, timeout, retry_limit).await {
-                    Ok(data) => (StatusCode::OK, Json(data)).into_response(),
+                    Ok(data) => {
+                        let images: Vec<String> = data.data.iter().filter_map(|d| d.url.clone()).collect();
+                        if !images.is_empty() {
+                            let mut history = state.history.write().await;
+                            history.insert(0, GenerationGroup {
+                                prompt: payload.prompt.clone(),
+                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() * 1000,
+                                images,
+                            });
+                            if history.len() > 100 { history.truncate(100); }
+                            let _ = save_history(&history).await;
+                        }
+                        (StatusCode::OK, Json(data)).into_response()
+                    },
                     Err(e) => (StatusCode::BAD_GATEWAY, format!("主备代理均失败: {}", e)).into_response()
                 }
             } else {
-                (StatusCode::BAD_GATEWAY, format!("请求失败且无备用代理: {}", e)).into_response()
-            }
-        }
-    }
-}
 
 async fn perform_generation(
     state: &AppState,
@@ -166,7 +221,6 @@ async fn perform_generation(
         url_str.to_string()
     };
     
-    // ... existing url logic ...
     if url.contains("/images/generations") {
         url = url.replace("/images/generations", "/chat/completions");
     } else if !url.ends_with("/chat/completions") {
@@ -175,7 +229,6 @@ async fn perform_generation(
         }
     }
 
-    // ... existing messages logic ...
     let mut messages = Vec::new();
     let content = if let Some(img_data) = &payload.image {
         serde_json::json!([
@@ -228,12 +281,14 @@ async fn perform_generation(
                     
                     for choice in chat_resp.choices {
                         let content = choice.message.content;
+                        tracing::debug!("收到响应内容: {}", content);
+                        
                         let url = extract_url(&content).ok_or_else(|| {
                             tracing::error!("❌ 响应文本中找不到图片地址: {}", content);
                             format!("无法解析响应中的图片地址: {}", content)
                         })?;
 
-                        tracing::debug!("🔗 提取到原始 URL: {}", url);
+                        tracing::info!("🔗 提取到图片 URL: {}", url);
                         
                         let mut item = models::openai::ImageData {
                             url: Some(url.clone()),
@@ -241,11 +296,15 @@ async fn perform_generation(
                             revised_prompt: Some(content.clone()),
                         };
 
-                        if let Ok(filename) = storage::download_and_save_image(&url, storage_path, &state.client).await {
-                            tracing::info!("💾 图片保存成功: {}", filename);
-                            item.url = Some(format!("/images/{}", filename));
-                        } else {
-                            tracing::error!("❌ 下载图片失败: {}", url);
+                        tracing::debug!("正在将图片下载到本地存储 (目录: {})", storage_path);
+                        match storage::download_and_save_image(&url, storage_path, &state.client).await {
+                            Ok(filename) => {
+                                tracing::info!("💾 图片保存成功: {}", filename);
+                                item.url = Some(format!("/images/{}", filename));
+                            },
+                            Err(e) => {
+                                tracing::error!("❌ 下载或保存图片失败: {}. 将直接使用原始 URL.", e);
+                            }
                         }
                         
                         image_data_vec.push(item);
@@ -264,7 +323,6 @@ async fn perform_generation(
                     let error_text = resp.text().await.unwrap_or_default();
                     tracing::error!("❌ 上游返回错误 ({}) | 详情: {}", status, error_text);
                     
-                    // 只要不是 400 这种参数错误，都进行重试
                     if status.as_u16() != 400 {
                         tracing::warn!("状态码 {} 可能是临时性错误，继续重试...", status);
                         continue;
@@ -274,7 +332,7 @@ async fn perform_generation(
             }
             Err(e) => {
                 tracing::error!("📡 网络请求异常 (超时或连接断开): {}", e);
-                if attempt == 9 { return Err(format!("最终尝试失败: {}", e)); }
+                if attempt == retry_limit - 1 { return Err(format!("最终尝试失败: {}", e)); }
                 continue;
             }
         }
@@ -282,20 +340,22 @@ async fn perform_generation(
     Err("重试耗尽".to_string())
 }
 
-/// 从字符串中提取第一个看起来像 URL 的部分
 fn extract_url(content: &str) -> Option<String> {
-    // 处理 Markdown 格式 ![alt](url)
     if let Some(start) = content.find("](") {
         let sub = &content[start + 2..];
         if let Some(end) = sub.find(')') {
-            return Some(sub[..end].to_string());
+            let mut url = sub[..end].trim().to_string();
+            if let Some(space_idx) = url.find(|c: char| c.is_whitespace()) {
+                url = url[..space_idx].to_string();
+            }
+            return Some(url.trim_matches(|c| c == '"' || c == '\'').to_string());
         }
     }
     
-    // 处理纯 URL (寻找 http)
     if let Some(start) = content.find("http") {
         let sub = &content[start..];
-        let end = sub.find(|c: char| c.is_whitespace() || c == '"' || c == ')' || c == ']').unwrap_or(sub.len());
+        let end = sub.find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ')' || c == ']')
+            .unwrap_or(sub.len());
         return Some(sub[..end].to_string());
     }
     

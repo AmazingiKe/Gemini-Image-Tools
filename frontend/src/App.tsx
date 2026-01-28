@@ -241,8 +241,9 @@ function GeneratorPage({
   );
 }
 
-function HistoryPage({ history }: { history: GenerationGroup[] }) {
+function HistoryPage({ history, onClear }: { history: GenerationGroup[], onClear: () => void }) {
   if (history.length === 0) {
+// ...
     return (
       <main className="flex-1 p-8 flex flex-col items-center justify-center text-gray-400">
         <History className="w-16 h-16 mb-4 opacity-20" />
@@ -261,6 +262,13 @@ function HistoryPage({ history }: { history: GenerationGroup[] }) {
           <h2 className="text-2xl font-bold text-gray-800">创作历史库</h2>
           <p className="text-sm text-gray-400">所有已成功生成的创意结晶</p>
         </div>
+        <button 
+          onClick={onClear}
+          className="ml-auto flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors border border-red-100"
+        >
+          <Trash2 className="w-4 h-4" />
+          清空历史
+        </button>
       </div>
 
       <div className="space-y-12">
@@ -320,11 +328,7 @@ function AppContent() {
 
   useEffect(() => {
     fetchConfig();
-    // Load history from local storage
-    const savedHistory = localStorage.getItem('gemini_history');
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
-    }
+    fetchHistory();
   }, []);
 
   const fetchConfig = async () => {
@@ -333,6 +337,26 @@ function AppContent() {
       setConfig(response.data);
     } catch (error) {
       console.error('获取配置失败:', error);
+    }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      const response = await axios.get('/api/history');
+      setHistory(response.data);
+    } catch (error) {
+      console.error('获取历史失败:', error);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (window.confirm('确定要清空所有创作历史吗？')) {
+      try {
+        await axios.delete('/api/history');
+        setHistory([]);
+      } catch (error) {
+        alert('清空历史失败');
+      }
     }
   };
 
@@ -373,18 +397,9 @@ function AppContent() {
         finishedCount++;
         if (url) results.push(url);
         
-        // When all tasks in this batch are done, update history
-        if (finishedCount === parallelCount && results.length > 0) {
-          const newGroup: GenerationGroup = {
-            prompt: currentPrompt,
-            timestamp: timestamp,
-            images: results
-          };
-          setHistory(prev => {
-            const updated = [newGroup, ...prev];
-            localStorage.setItem('gemini_history', JSON.stringify(updated.slice(0, 100))); // Limit to 100
-            return updated;
-          });
+        // When all tasks in this batch are done, refresh history from backend
+        if (finishedCount === parallelCount) {
+          fetchHistory();
         }
       });
     });
@@ -502,8 +517,9 @@ function AppContent() {
               startGeneration={startGeneration}
             />
           } />
-          <Route path="/history" element={<HistoryPage history={history} />} />
-        </Routes>
+                  <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
+                </Routes>
+          
       </div>
 
       {/* Config Modal */}
