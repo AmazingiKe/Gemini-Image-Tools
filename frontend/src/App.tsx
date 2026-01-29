@@ -15,60 +15,33 @@ import {
   Sun,
   Archive,
   RefreshCw,
-  Layers
+  Layers,
+  ChevronDown
 } from 'lucide-react';
 import axios from 'axios';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { TopBar } from './components/TopBar';
-
-// --- Types ---
-interface Task {
-  id: string;
-  prompt: string;
-  negative_prompt?: string;
-  aspect_ratio: string;
-  status: 'pending' | 'generating' | 'completed' | 'failed';
-  progress: number;
-  resultUrl?: string;
-  error?: string;
-  timestamp: number;
-}
-
-interface AppConfig {
-  gemini_proxy_url: string;
-  fallback_proxy_url: string | null;
-  api_key: string;
-  admin_token: string;
-  storage_path: string;
-  port: number;
-  timeout: number;
-  retry_limit: number;
-}
-
-interface GenerationGroup {
-  prompt: string;
-  timestamp: number;
-  images: string[];
-}
+import { SettingsPage } from './pages/SettingsPage';
+import type { Task, AppConfig, GenerationGroup } from './types';
 
 // --- Components ---
 
-function GeneratorPage({ 
-  tasks, 
-  prompt, 
-  setPrompt, 
+function GeneratorPage({
+  tasks,
+  prompt,
+  setPrompt,
   negativePrompt,
   setNegativePrompt,
   aspectRatio,
   setAspectRatio,
-  model, 
-  setModel, 
-  parallelCount, 
-  setParallelCount, 
+  model,
+  setModel,
+  parallelCount,
+  setParallelCount,
   baseImages,
-  setBaseImages, 
+  setBaseImages,
   startGeneration,
   onImageClick,
   isEnhancing,
@@ -76,6 +49,8 @@ function GeneratorPage({
 }: any) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [loadedTasks, setLoadedTasks] = useState<Set<string>>(new Set());
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -118,13 +93,44 @@ function GeneratorPage({
         <div className="max-w-[1600px] mx-auto">
           {tasks.length === 0 ? (
             <div className="h-[50vh] flex flex-col items-center justify-center">
-              <motion.div 
+              <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 className="relative mb-8"
               >
-                <div className="absolute -inset-10 bg-blue-100 dark:bg-blue-900 rounded-full blur-3xl opacity-20 animate-pulse"></div>
-                <div className="w-24 h-24 bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-2xl flex items-center justify-center relative z-10 border border-gray-100 dark:border-white/5">
+                {/* Atmosphere Layer */}
+                <motion.div
+                  animate={{
+                    rotate: [0, 360],
+                    scale: [1, 1.1, 1],
+                  }}
+                  transition={{
+                    duration: 20,
+                    repeat: Infinity,
+                    ease: "linear"
+                  }}
+                  className="absolute -inset-24 bg-gradient-to-tr from-indigo-500/10 via-cyan-400/10 to-purple-500/10 rounded-full blur-[120px] opacity-50"
+                />
+
+                {/* Interference Layer */}
+                <motion.div
+                  animate={{
+                    x: [0, 15, -15, 0],
+                    y: [0, -10, 10, 0],
+                    scale: [1, 1.2, 0.9, 1],
+                  }}
+                  transition={{
+                    duration: 10,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                  className="absolute -inset-16 bg-gradient-to-br from-indigo-500/20 via-cyan-400/15 to-purple-500/20 rounded-full blur-[80px] opacity-40"
+                />
+
+                {/* Core Layer */}
+                <div className="absolute -inset-10 bg-gradient-to-r from-indigo-500/30 via-cyan-400/20 to-purple-500/30 rounded-full blur-[40px] opacity-60 animate-pulse"></div>
+
+                <div className="w-24 h-24 bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-xl rounded-3xl shadow-2xl flex items-center justify-center relative z-10 border border-white/20 dark:border-white/10 ring-1 ring-white/20">
                   <ImageIcon className="w-10 h-10 text-black dark:text-white opacity-80" />
                 </div>
               </motion.div>
@@ -146,38 +152,60 @@ function GeneratorPage({
                     className="bg-white dark:bg-[#1d1d1f] rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 dark:border-white/5 overflow-hidden flex flex-col group hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-500 hover:-translate-y-1"
                   >
                     <div className="aspect-square bg-[#f5f5f7] dark:bg-black/20 relative">
-                      {task.status === 'completed' && task.resultUrl ? (
+                      {task.status === 'completed' && task.resultUrl && !failedImages.has(task.id) ? (
                         <>
-                          <img 
-                            src={task.resultUrl} 
-                            alt={task.prompt} 
-                            className="w-full h-full object-cover cursor-zoom-in" 
+                          <img
+                            src={task.resultUrl}
+                            alt={task.prompt}
+                            className={`w-full h-full object-cover cursor-zoom-in transition-opacity duration-700 ${loadedTasks.has(task.id) ? 'opacity-100' : 'opacity-0'}`}
+                            onLoad={() => setLoadedTasks(prev => new Set(prev).add(task.id))}
+                            onError={() => setFailedImages(prev => new Set(prev).add(task.id))}
                             onClick={() => onImageClick(task.resultUrl)}
                           />
-                          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
-                            <button 
-                              onClick={() => onImageClick(task.resultUrl)}
-                              className="p-3 bg-white/90 backdrop-blur rounded-full text-black hover:bg-white transition-all shadow-xl hover:scale-110"
-                            >
-                              <Maximize2 className="w-5 h-5" />
-                            </button>
-                            <a 
-                              href={task.resultUrl} 
-                              download 
-                              className="p-3 bg-black text-white rounded-full hover:bg-gray-800 transition-all shadow-xl hover:scale-110"
-                            >
-                              <Download className="w-5 h-5" />
-                            </a>
-                          </div>
+
+                          {!loadedTasks.has(task.id) && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center p-10 bg-[#f5f5f7] dark:bg-black/20">
+                              <div className="relative mb-8">
+                                <Loader2 className="w-14 h-14 text-black dark:text-white animate-spin opacity-20" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <span className="text-[10px] font-black">100%</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-gray-200 dark:bg-white/10 rounded-full h-1 overflow-hidden">
+                                <div className="bg-black dark:bg-white h-1 rounded-full w-full opacity-50"></div>
+                              </div>
+                              <p className="mt-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">正在加载图片...</p>
+                            </div>
+                          )}
+
+                          {loadedTasks.has(task.id) && (
+                            <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
+                              <button
+                                onClick={() => onImageClick(task.resultUrl)}
+                                className="p-3 bg-white/90 backdrop-blur rounded-full text-black hover:bg-white transition-all shadow-xl hover:scale-110"
+                              >
+                                <Maximize2 className="w-5 h-5" />
+                              </button>
+                              <a
+                                href={task.resultUrl}
+                                download
+                                className="p-3 bg-black text-white rounded-full hover:bg-gray-800 transition-all shadow-xl hover:scale-110"
+                              >
+                                <Download className="w-5 h-5" />
+                              </a>
+                            </div>
+                          )}
                         </>
-                      ) : task.status === 'failed' ? (
+                      ) : (task.status === 'failed' || failedImages.has(task.id)) ? (
                         <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
                           <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-2xl mb-4 text-red-400">
                             <Trash2 className="w-8 h-8" />
                           </div>
-                          <p className="text-sm text-red-500 font-bold mb-2">生成失败</p>
+                          <p className="text-sm text-red-500 font-bold mb-2">
+                            {failedImages.has(task.id) ? '图片加载失败' : '生成失败'}
+                          </p>
                           <div className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-black/40 p-3 rounded-xl w-full line-clamp-4 border border-gray-100 dark:border-white/5 font-mono">
-                            {task.error}
+                            {failedImages.has(task.id) ? '无法从服务器获取图片资源，请检查网络或稍后重试。' : task.error}
                           </div>
                         </div>
                       ) : (
@@ -228,35 +256,35 @@ function GeneratorPage({
         <div className="max-w-3xl mx-auto space-y-3">
           <AnimatePresence>
             {showAdvanced && (
-              <motion.div 
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-3 rounded-2xl border border-white/50 dark:border-white/10 shadow-xl space-y-3"
+              <motion.div
+                initial={{ height: 0, opacity: 0, y: 20 }}
+                animate={{ height: 'auto', opacity: 1, y: 0 }}
+                exit={{ height: 0, opacity: 0, y: 20 }}
+                className="overflow-hidden bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-3xl p-6 rounded-[2rem] border border-white/40 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.1)] space-y-6"
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">负向提示词</label>
-                    <input 
-                      type="text" 
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 block px-1">负向提示词</label>
+                    <input
+                      type="text"
                       value={negativePrompt}
                       onChange={(e) => setNegativePrompt(e.target.value)}
                       placeholder="你不希望在图像中看到什么..."
-                      className="w-full bg-gray-50 dark:bg-white/5 border-none rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-black dark:focus:ring-white transition-all outline-none text-black dark:text-white"
+                      className="w-full bg-gray-100/50 dark:bg-white/5 border-none rounded-2xl px-4 py-3 text-xs focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all outline-none text-black dark:text-white placeholder:text-gray-400"
                     />
                   </div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">图像比例</label>
-                      <div className="flex gap-1.5">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 block px-1">图像比例</label>
+                      <div className="flex gap-2 p-1 bg-gray-100/80 dark:bg-white/5 rounded-2xl">
                         {['1024x1024', '1280x720', '720x1280', '1216x896'].map(ratio => (
-                          <button 
+                          <button
                             key={ratio}
                             onClick={() => setAspectRatio(ratio)}
-                            className={`flex-1 py-1.5 text-[9px] font-bold rounded-lg border transition-all ${
-                              aspectRatio === ratio 
-                              ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' 
-                              : 'bg-white dark:bg-transparent text-gray-400 border-gray-200 dark:border-white/10 hover:border-gray-400'
+                            className={`flex-1 py-2 text-[10px] font-bold rounded-xl transition-all ${
+                              aspectRatio === ratio
+                              ? 'bg-white dark:bg-white/10 text-black dark:text-white shadow-sm'
+                              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
                             }`}
                           >
                             {ratio === '1024x1024' ? '1:1' : ratio === '1280x720' ? '16:9' : ratio === '720x1280' ? '9:16' : '4:3'}
@@ -271,92 +299,115 @@ function GeneratorPage({
           </AnimatePresence>
 
           {baseImages.length > 0 && (
-            <div className="flex items-center gap-3 bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-2 rounded-2xl border border-white/50 dark:border-white/10 w-fit shadow-2xl max-w-full overflow-x-auto custom-scrollbar">
-              <div className="flex gap-2">
+            <div className="flex items-center gap-3 bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-3xl p-2.5 rounded-[1.5rem] border border-white/40 dark:border-white/10 w-fit shadow-xl max-w-full overflow-x-auto custom-scrollbar">
+              <div className="flex gap-2.5">
                 {baseImages.map((img: string, idx: number) => (
-                  <div key={idx} className="relative shrink-0">
-                    <img src={img} className="w-12 h-12 object-cover rounded-lg shadow-inner" alt={`Preview ${idx}`} />
-                    <button 
+                  <div key={idx} className="relative shrink-0 group">
+                    <img src={img} className="w-14 h-14 object-cover rounded-2xl shadow-inner border border-black/5 dark:border-white/5" alt={`Preview ${idx}`} />
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
                       onClick={() => setBaseImages((prev: string[]) => prev.filter((_, i) => i !== idx))}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg flex items-center justify-center"
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-white/90 dark:bg-black/90 text-black dark:text-white rounded-full border border-black/5 dark:border-white/10 shadow-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>
+                      <X className="w-3 h-3" />
+                    </motion.button>
                   </div>
                 ))}
               </div>
-              <div className="pr-3 pl-1 border-l border-gray-200 dark:border-white/10 ml-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-black dark:text-white leading-none whitespace-nowrap">{baseImages.length} 张参考图</p>
-                <p className="text-[8px] text-gray-400 mt-0.5 uppercase tracking-tighter whitespace-nowrap">Images Attached</p>
+              <div className="pr-4 pl-2 border-l border-gray-200 dark:border-white/10 ml-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-black dark:text-white leading-none whitespace-nowrap">{baseImages.length} 张参考图</p>
+                <p className="text-[8px] text-gray-400 mt-1 uppercase tracking-tighter whitespace-nowrap font-medium">Images Attached</p>
               </div>
             </div>
           )}
           
-          <div className={`bg-white/70 dark:bg-black/70 backdrop-blur-2xl p-1.5 rounded-full border border-white/50 dark:border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex items-center gap-1.5 group transition-all duration-500 focus-within:shadow-[0_10px_40px_rgba(0,0,0,0.12)] focus-within:bg-white/90 dark:focus-within:bg-black/90 ${isDragging ? 'ring-2 ring-blue-500 bg-blue-50/50' : ''}`}>
-            <div className="flex items-center">
+          <div className={`bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-3xl p-2 rounded-full border border-white/40 dark:border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.12)] flex items-center gap-2 group transition-all duration-500 focus-within:bg-white dark:focus-within:bg-[#1d1d1f] ${isDragging ? 'ring-2 ring-blue-500/50 bg-blue-50/50' : ''}`}>
+            <div className="flex items-center pl-1">
               {isDragging && (
-                <div className="p-2.5 text-blue-500 flex items-center gap-1">
-                  <ImageIcon className="w-5 h-5 scale-125 animate-pulse" />
-                  <span className="text-[10px] font-black uppercase animate-pulse">松开以添加</span>
+                <div className="p-2.5 text-blue-500 flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 scale-110 animate-pulse" />
+                  <span className="text-[10px] font-bold uppercase animate-pulse">松开以添加</span>
                 </div>
               )}
-              <button 
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className={`p-2.5 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white'}`}
+                className={`p-3 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5'}`}
               >
                 <Sliders className="w-5 h-5" />
-              </button>
+              </motion.button>
             </div>
-            
-            <input 
-              type="text" 
+
+            <input
+              type="text"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && startGeneration()}
               placeholder={isDragging ? "将图片拖放到此处..." : "描述您的创意，或拖入图片..."}
-              className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-2 px-1 text-sm font-medium outline-none"
+              className="flex-1 bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-3 px-2 text-sm font-medium outline-none placeholder:text-gray-400"
             />
 
-            <button 
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={onEnhance}
               disabled={!prompt.trim() || isEnhancing}
-              className="p-2.5 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all disabled:opacity-30"
+              className="p-3 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all disabled:opacity-20 disabled:grayscale"
             >
               {isEnhancing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-            </button>
-            
-            <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] dark:bg-white/5 p-1 rounded-full border border-gray-200/50 dark:border-white/5 shrink-0">
-              <select 
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="bg-transparent text-[9px] font-black uppercase tracking-tighter text-gray-500 border-none focus:ring-0 cursor-pointer px-2 outline-none"
-              >
-                <option value="gemini-3-pro-image">Gemini 3 Pro</option>
-                <option value="dall-e-3">DALL-E 3</option>
-              </select>
-              <div className="w-[1px] h-3 bg-gray-200 dark:bg-white/10 mx-0.5"></div>
-              {[1, 2, 4, 8, 16].map(n => (
+            </motion.button>
+
+            <div className="hidden md:flex items-center gap-2 bg-gray-100/80 dark:bg-white/5 p-1 rounded-full shrink-0">
+              <div className="relative">
                 <button
-                  key={n}
-                  onClick={() => setParallelCount(n)}
-                  className={`w-7 h-7 rounded-full text-[9px] font-black transition-all ${
-                    parallelCount === n 
-                      ? 'bg-white dark:bg-white/20 shadow-sm text-black dark:text-white' 
-                      : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                  }`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-white/50 dark:hover:bg-white/5 transition-all"
+                  onClick={() => {
+                    const nextModel = model === 'gemini-3-pro-image' ? 'dall-e-3' : 'gemini-3-pro-image';
+                    setModel(nextModel);
+                  }}
                 >
-                  {n}
+                  <span className="text-[10px] font-bold uppercase tracking-tight text-gray-500 dark:text-gray-400">
+                    {model === 'gemini-3-pro-image' ? 'Gemini 3' : 'DALL-E 3'}
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-gray-400" />
                 </button>
-              ))}
+              </div>
+
+              <div className="w-[1px] h-3 bg-gray-300/50 dark:bg-white/10 mx-0.5"></div>
+
+              <div className="flex gap-1 relative">
+                {[1, 2, 4, 8, 16].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setParallelCount(n)}
+                    className="relative z-10 w-8 h-8 flex items-center justify-center text-[10px] font-bold transition-all"
+                  >
+                    <span className={parallelCount === n ? 'text-black dark:text-white' : 'text-gray-400 hover:text-gray-600'}>
+                      {n}
+                    </span>
+                    {parallelCount === n && (
+                      <motion.div
+                        layoutId="activeSegment"
+                        className="absolute inset-0 bg-white dark:bg-white/10 rounded-full shadow-sm -z-10"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <button 
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={startGeneration}
               disabled={!prompt.trim() && baseImages.length === 0}
-              className="bg-black dark:bg-white text-white dark:text-black hover:opacity-90 disabled:bg-gray-100 dark:disabled:bg-white/5 disabled:text-gray-300 p-2.5 rounded-full font-bold transition-all px-6 shadow-lg active:scale-95 ml-1"
+              className="bg-black dark:bg-white text-white dark:text-black hover:opacity-90 disabled:bg-gray-200 dark:disabled:bg-white/5 disabled:text-gray-400 disabled:grayscale p-3 rounded-full font-bold transition-all px-8 shadow-lg ml-1 flex items-center justify-center"
             >
               <Send className="w-4 h-4" />
-            </button>
+            </motion.button>
           </div>
         </div>
       </footer>
@@ -365,6 +416,8 @@ function GeneratorPage({
 }
 
 function HistoryPage({ history, onClear }: { history: GenerationGroup[], onClear: () => void }) {
+  const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
+
   const downloadZip = async (timestamp: number) => {
     toast.promise(
       axios.get(`/api/export-zip?timestamp=${timestamp}`, { responseType: 'blob' })
@@ -442,8 +495,18 @@ function HistoryPage({ history, onClear }: { history: GenerationGroup[], onClear
               
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                 {group.images.map((url, imgIdx) => (
-                  <div key={imgIdx} className="aspect-square rounded-3xl overflow-hidden relative group/img cursor-pointer border border-gray-50 dark:border-white/5 shadow-sm">
-                    <img src={url} alt={group.prompt} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-700" />
+                  <div key={imgIdx} className="aspect-square rounded-3xl overflow-hidden relative group/img cursor-pointer border border-gray-50 dark:border-white/5 shadow-sm bg-[#f5f5f7] dark:bg-black/20">
+                    <img
+                      src={url}
+                      alt={group.prompt}
+                      className={`w-full h-full object-cover group-hover/img:scale-110 transition-all duration-700 ${loadedImages.has(url) ? 'opacity-100' : 'opacity-0'}`}
+                      onLoad={() => setLoadedImages(prev => new Set(prev).add(url))}
+                    />
+                    {!loadedImages.has(url) && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-black dark:text-white animate-spin opacity-20" />
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
                       <a href={url} download className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform shadow-xl">
                         <Download className="w-4 h-4" />
@@ -697,6 +760,7 @@ function AppContent() {
             />
           } />
           <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
+          <Route path="/settings" element={<SettingsPage config={config} onUpdateConfig={handleUpdateConfig} />} />
         </Routes>
       </div>
 

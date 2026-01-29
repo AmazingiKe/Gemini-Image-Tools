@@ -20,13 +20,11 @@ import { Link, useLocation } from 'react-router-dom';
 interface TopBarProps {
   isDark: boolean;
   onToggleTheme: () => void;
-  onOpenConfig: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   isDark,
-  onToggleTheme,
-  onOpenConfig
+  onToggleTheme
 }) => {
   const location = useLocation();
 
@@ -82,12 +80,12 @@ export const TopBar: React.FC<TopBarProps> = ({
           {isDark ? <Sun size={14} /> : <Moon size={14} />}
         </button>
 
-        <button 
-          onClick={onOpenConfig}
+        <Link
+          to="/settings"
           className="p-1.5 text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#333336] rounded-md transition-all"
         >
           <Settings size={14} />
-        </button>
+        </Link>
 
       </div>
     </div>
