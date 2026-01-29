@@ -23,6 +23,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { TopBar } from './components/TopBar';
+import { IdleAnimation } from './components/IdleAnimation';
 import { SettingsPage } from './pages/SettingsPage';
 import type { Task, AppConfig, GenerationGroup } from './types';
 
@@ -92,52 +93,19 @@ function GeneratorPage({
       >
         <div className="max-w-[1600px] mx-auto">
           {tasks.length === 0 ? (
-            <div className="h-[50vh] flex flex-col items-center justify-center">
+            <div className="h-[65vh] flex flex-col items-center justify-center">
+              <IdleAnimation />
               <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="relative mb-8"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5, duration: 0.8 }}
+                className="text-center"
               >
-                {/* Atmosphere Layer */}
-                <motion.div
-                  animate={{
-                    rotate: [0, 360],
-                    scale: [1, 1.1, 1],
-                  }}
-                  transition={{
-                    duration: 20,
-                    repeat: Infinity,
-                    ease: "linear"
-                  }}
-                  className="absolute -inset-24 bg-gradient-to-tr from-indigo-500/10 via-cyan-400/10 to-purple-500/10 rounded-full blur-[120px] opacity-50"
-                />
-
-                {/* Interference Layer */}
-                <motion.div
-                  animate={{
-                    x: [0, 15, -15, 0],
-                    y: [0, -10, 10, 0],
-                    scale: [1, 1.2, 0.9, 1],
-                  }}
-                  transition={{
-                    duration: 10,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                  className="absolute -inset-16 bg-gradient-to-br from-indigo-500/20 via-cyan-400/15 to-purple-500/20 rounded-full blur-[80px] opacity-40"
-                />
-
-                {/* Core Layer */}
-                <div className="absolute -inset-10 bg-gradient-to-r from-indigo-500/30 via-cyan-400/20 to-purple-500/30 rounded-full blur-[40px] opacity-60 animate-pulse"></div>
-
-                <div className="w-24 h-24 bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-xl rounded-3xl shadow-2xl flex items-center justify-center relative z-10 border border-white/20 dark:border-white/10 ring-1 ring-white/20">
-                  <ImageIcon className="w-10 h-10 text-black dark:text-white opacity-80" />
-                </div>
+                <h2 className="text-2xl font-bold tracking-tight text-black dark:text-white mb-2">释放你的想象力</h2>
+                <p className="text-[13px] text-gray-400 dark:text-gray-500 max-w-xs font-medium leading-relaxed mx-auto opacity-80">
+                  输入您的绘图灵感，或者直接拖入多张参考图进行询问与生成。
+                </p>
               </motion.div>
-              <h2 className="text-3xl font-bold tracking-tight text-black dark:text-white mb-3 text-center">释放你的想象力</h2>
-              <p className="text-gray-400 dark:text-gray-500 text-center max-w-sm font-medium leading-relaxed">
-                输入您的绘图灵感，或者直接拖入多张参考图进行询问与生成。
-              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
@@ -330,14 +298,6 @@ function GeneratorPage({
                   <span className="text-[10px] font-bold uppercase animate-pulse">松开以添加</span>
                 </div>
               )}
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className={`p-3 rounded-full transition-all ${showAdvanced ? 'text-black dark:text-white bg-gray-100 dark:bg-white/10' : 'text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5'}`}
-              >
-                <Sliders className="w-5 h-5" />
-              </motion.button>
             </div>
 
             <input
@@ -687,29 +647,72 @@ function AppContent() {
       } : t));
       onFinish(imageUrl);
     } catch (error: any) {
-      setTasks(prev => prev.map(t => t.id === task.id ? { 
-        ...t, 
-        status: 'failed', 
-        error: error.response?.data || error.message 
+      setTasks(prev => prev.map(t => t.id === task.id ? {
+        ...t,
+        status: 'failed',
+        error: error.response?.data || error.message
       } : t));
       onFinish();
     }
   };
 
+  const toggleTheme = (event: React.MouseEvent) => {
+    const isAppearanceTransition =
+      // @ts-ignore
+      document.startViewTransition &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (!isAppearanceTransition) {
+      setIsDark(!isDark);
+      return;
+    }
+
+    const x = event.clientX;
+    const y = event.clientY;
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    // @ts-ignore
+    const transition = document.startViewTransition(async () => {
+      setIsDark(!isDark);
+    });
+
+    transition.ready.then(() => {
+      const clipPath = [
+        `circle(0px at ${x}px ${y}px)`,
+        `circle(${endRadius}px at ${x}px ${y}px)`,
+      ];
+      document.documentElement.animate(
+        {
+          clipPath: isDark ? [...clipPath].reverse() : clipPath,
+        },
+        {
+          duration: 500,
+          easing: "ease-in-out",
+          pseudoElement: isDark
+            ? "::view-transition-old(root)"
+            : "::view-transition-new(root)",
+        }
+      );
+    });
+  };
+
   return (
     <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] flex flex-col font-sans text-[#1d1d1f] dark:text-[#f5f5f7] selection:bg-blue-100 transition-colors duration-700">
       <Toaster position="top-center" richColors theme={isDark ? 'dark' : 'light'} />
-      
+
       <AnimatePresence>
         {selectedImage && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-4"
             onClick={() => setSelectedImage(null)}
           >
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -730,10 +733,10 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-      <TopBar 
-        isDark={isDark} 
-        onToggleTheme={() => setIsDark(!isDark)} 
-        onOpenConfig={() => setIsConfigOpen(true)} 
+      <TopBar
+        isDark={isDark}
+        onToggleTheme={toggleTheme}
+        onOpenConfig={() => setIsConfigOpen(true)}
       />
 
       <div className="flex-1 flex flex-col relative">

@@ -19,7 +19,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 interface TopBarProps {
   isDark: boolean;
-  onToggleTheme: () => void;
+  onToggleTheme: (event: React.MouseEvent) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -72,9 +72,9 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center justify-end gap-2 w-[200px] shrink-0">
-        
-        <button 
-          onClick={onToggleTheme}
+
+        <button
+          onClick={(e) => onToggleTheme(e)}
           className="p-1.5 text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#333336] rounded-md transition-all"
         >
           {isDark ? <Sun size={14} /> : <Moon size={14} />}
