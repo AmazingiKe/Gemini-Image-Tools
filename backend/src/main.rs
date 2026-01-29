@@ -330,21 +330,26 @@ async fn perform_generation(
     } else {
         url_str.to_string()
     };
-    
+
+    // Standardize URL to always use /v1/chat/completions
     if url.contains("/images/generations") {
         url = url.replace("/images/generations", "/chat/completions");
     } else if !url.ends_with("/chat/completions") {
-        if url.ends_with("/v1") || url.ends_with("/v1/") {
-            url = format!("{}/chat/completions", url.trim_end_matches('/'));
+        let base = url.trim_end_matches('/');
+        if base.ends_with("/v1") {
+            url = format!("{}/chat/completions", base);
+        } else {
+            url = format!("{}/v1/chat/completions", base);
         }
     }
 
     let mut messages = Vec::new();
     
-    // Combine prompt and negative prompt
+    // Combine prompt and negative prompt with cleaner formatting
     let full_prompt = if let Some(neg) = &payload.negative_prompt {
-        if !neg.is_empty() {
-            format!("{}\n[Negative Prompt: {}]", payload.prompt, neg)
+        let trimmed_neg = neg.trim();
+        if !trimmed_neg.is_empty() {
+            format!("{}\nNegative prompt: {}", payload.prompt, trimmed_neg)
         } else {
             payload.prompt.clone()
         }
@@ -373,11 +378,12 @@ async fn perform_generation(
         content,
     });
 
-    let chat_payload = serde_json::json!({
-        "model": payload.model,
-        "messages": messages,
-        "size": payload.size
-    });
+    let chat_payload = models::openai::ChatCompletionRequest {
+        model: payload.model.clone(),
+        messages,
+        temperature: None,
+        max_tokens: None,
+    };
 
     for attempt in 0..retry_limit {
         tracing::info!("🚀 正在尝试生成图像 [第 {}/{} 次] | 目标: {}", attempt + 1, retry_limit, url);
@@ -425,11 +431,15 @@ async fn perform_generation(
                     });
                 } else {
                     let error_text = resp.text().await.unwrap_or_default();
-                    if status.as_u16() != 400 { continue; }
-                    return Err(format!("上游返回错误 ({}): {}", status, error_text));
+                    tracing::error!("❌ 上游请求失败 | 状态码: {} | 响应: {}", status, error_text);
+                    if status.as_u16() >= 400 && status.as_u16() < 500 && status.as_u16() != 429 {
+                        return Err(format!("客户端请求错误 ({}): {}", status, error_text));
+                    }
+                    continue;
                 }
             }
             Err(e) => {
+                tracing::warn!("⚠️ 网络请求异常: {} | 将进行下一次重试", e);
                 if attempt == retry_limit - 1 { return Err(e.to_string()); }
                 continue;
             }
