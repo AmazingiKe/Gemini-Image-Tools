@@ -33,7 +33,17 @@ pub struct ImageData {
     pub revised_prompt: Option<String>,
 }
 
-// --- Chat Completion Structures (for upstream proxy response parsing) ---
+// --- Chat Completion Structures (for upstream proxy requests and responses) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChatCompletionRequest {
+    pub model: String,
+    pub messages: Vec<ChatMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
