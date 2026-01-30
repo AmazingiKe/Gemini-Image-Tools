@@ -335,15 +335,6 @@ export const Workstation: React.FC<GeneratorPageProps> = ({
             </button>
 
             <div className="hidden md:flex items-center gap-1 bg-[#f5f5f7] dark:bg-white/5 p-1 rounded-full border border-gray-200/50 dark:border-white/5 shrink-0">
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="bg-transparent text-[9px] font-black uppercase tracking-tighter text-gray-500 border-none focus:ring-0 cursor-pointer px-2 outline-none"
-              >
-                <option value="gemini-3-pro-image">Gemini 3 Pro</option>
-                <option value="dall-e-3">DALL-E 3</option>
-              </select>
-              <div className="w-[1px] h-3 bg-gray-200 dark:bg-white/10 mx-0.5"></div>
               {[1, 2, 4, 8, 16].map(n => (
                 <button
                   key={n}

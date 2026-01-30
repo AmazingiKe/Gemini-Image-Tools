@@ -46,50 +46,17 @@ function GeneratorPage({
   startGeneration,
   onImageClick,
   isEnhancing,
-  onEnhance
+  onEnhance,
+  isDragging
 }: any) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   const [loadedTasks, setLoadedTasks] = useState<Set<string>>(new Set());
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setIsDragging(true);
-    } else if (e.type === 'dragleave') {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    
-    const newImages = await Promise.all(imageFiles.map(file => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-    }));
-
-    setBaseImages((prev: string[]) => [...prev, ...newImages]);
-  };
 
   return (
     <>
       <main 
-        className={`flex-1 p-8 overflow-y-auto transition-colors ${isDragging ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
+        className="flex-1 p-8 overflow-y-auto transition-colors"
       >
         <div className="max-w-[1600px] mx-auto">
           {tasks.length === 0 ? (
@@ -320,23 +287,6 @@ function GeneratorPage({
             </motion.button>
 
             <div className="hidden md:flex items-center gap-2 bg-gray-100/80 dark:bg-white/5 p-1 rounded-full shrink-0">
-              <div className="relative">
-                <button
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-white/50 dark:hover:bg-white/5 transition-all"
-                  onClick={() => {
-                    const nextModel = model === 'gemini-3-pro-image' ? 'dall-e-3' : 'gemini-3-pro-image';
-                    setModel(nextModel);
-                  }}
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-tight text-gray-500 dark:text-gray-400">
-                    {model === 'gemini-3-pro-image' ? 'Gemini 3' : 'DALL-E 3'}
-                  </span>
-                  <ChevronDown className="w-3 h-3 text-gray-400" />
-                </button>
-              </div>
-
-              <div className="w-[1px] h-3 bg-gray-300/50 dark:bg-white/10 mx-0.5"></div>
-
               <div className="flex gap-1 relative">
                 {[1, 2, 4, 8, 16].map(n => (
                   <button
@@ -497,7 +447,49 @@ function AppContent() {
   const [isDark, setIsDark] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const location = useLocation();
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragging(true);
+    } else if (e.type === 'dragleave') {
+      // Check if we are actually leaving the window or just moving over an element
+      const rect = document.documentElement.getBoundingClientRect();
+      if (
+        e.clientX <= rect.left ||
+        e.clientX >= rect.right ||
+        e.clientY <= rect.top ||
+        e.clientY >= rect.bottom
+      ) {
+        setIsDragging(false);
+      }
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length > 0) {
+      const newImages = await Promise.all(imageFiles.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }));
+
+      setBaseImages((prev: string[]) => [...prev, ...newImages]);
+      toast.success(`成功添加 ${imageFiles.length} 张参考图`);
+    }
+  };
 
   useEffect(() => {
     fetchConfig();
@@ -700,10 +692,40 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] flex flex-col font-sans text-[#1d1d1f] dark:text-[#f5f5f7] selection:bg-blue-100 transition-colors duration-700">
+    <div 
+      className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] flex flex-col font-sans text-[#1d1d1f] dark:text-[#f5f5f7] selection:bg-blue-100 transition-colors duration-700 relative"
+      onDragEnter={handleDrag}
+      onDragOver={handleDrag}
+      onDragLeave={handleDrag}
+      onDrop={handleDrop}
+    >
       <Toaster position="top-center" richColors theme={isDark ? 'dark' : 'light'} />
 
       <AnimatePresence>
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-blue-500/10 dark:bg-blue-500/20 backdrop-blur-md flex items-center justify-center pointer-events-none"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white/90 dark:bg-[#1d1d1f]/90 p-12 rounded-[3rem] shadow-2xl border-4 border-dashed border-blue-500/50 flex flex-col items-center gap-6"
+            >
+              <div className="w-24 h-24 bg-blue-500 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <ImageIcon className="w-12 h-12 text-white animate-bounce" />
+              </div>
+              <div className="text-center">
+                <h2 className="text-2xl font-black text-black dark:text-white mb-2">释放以添加图片</h2>
+                <p className="text-blue-500 font-bold uppercase tracking-widest text-[10px]">Release to add reference images</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {selectedImage && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -760,6 +782,7 @@ function AppContent() {
               onImageClick={setSelectedImage}
               isEnhancing={isEnhancing}
               onEnhance={handleEnhance}
+              isDragging={isDragging}
             />
           } />
           <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
