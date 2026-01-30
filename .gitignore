@@ -20,3 +20,4 @@ Cargo.lock
 storage/
 *.log
 history.json
+.claude/
