@@ -55,6 +55,10 @@ Gemini-Image-Tools 是一个基于 OpenAI 协议标准构建的专业图像生�
 docker-compose up -d
 ```
 
+## 📄 许可证
+
+本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 协议开源。详情请参阅 [LICENSE](LICENSE) 文件。
+
 ---
 
 **Gemini-Image-Tools** - 让创意捕捉更坚韧、更优雅。
