@@ -177,11 +177,16 @@ async fn enhance_prompt(
     };
 
     let chat_payload = serde_json::json!({
-        "model": "gemini-1.5-flash", // Use a faster model for enhancement
+        "model": "gemini-3-flash", // Use gemini-3-flash for enhancement as requested
         "messages": [
             {
                 "role": "system",
-                "content": "You are a professional image prompt engineer. Expand the user's simple prompt into a detailed, high-quality, artistic prompt for an image generator. Keep the core idea but add details about style, lighting, composition, and mood. Output ONLY the enhanced prompt text."
+                "content": "You are a professional image prompt engineer. Your task is to 'beautify' or 'enhance' the user's input prompt. \
+                            1. If the input is in Chinese, translate the core idea to English and expand it. \
+                            2. Add artistic details like lighting, composition, style (e.g., cinematic, oil painting, hyper-realistic), and mood. \
+                            3. Use professional vocabulary (e.g., 'octane render', '4k resolution', 'volumetric lighting'). \
+                            4. Keep the original intent of the user. \
+                            5. Output ONLY the final enhanced English prompt text, no explanations."
             },
             {
                 "role": "user",
@@ -199,15 +204,30 @@ async fn enhance_prompt(
 
     match response {
         Ok(resp) => {
-            if resp.status().is_success() {
-                let data: models::openai::ChatCompletionResponse = resp.json().await.unwrap();
-                if let Some(choice) = data.choices.first() {
-                    return (StatusCode::OK, choice.message.content.clone()).into_response();
+            let status = resp.status();
+            if status.is_success() {
+                match resp.json::<models::openai::ChatCompletionResponse>().await {
+                    Ok(data) => {
+                        if let Some(choice) = data.choices.first() {
+                            let content = choice.message.content.trim().to_string();
+                            tracing::info!("提示词美化成功: {} -> {}", payload.prompt, content);
+                            return (StatusCode::OK, content).into_response();
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("解析美化响应失败: {}", e);
+                    }
                 }
+            } else {
+                let error_text = resp.text().await.unwrap_or_default();
+                tracing::error!("美化请求失败 ({}): {}", status, error_text);
             }
             (StatusCode::BAD_GATEWAY, "Failed to enhance prompt").into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => {
+            tracing::error!("连接代理失败: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
     }
 }
 

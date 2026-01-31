@@ -280,6 +280,7 @@ function GeneratorPage({
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={onEnhance}
+              title="使用 Gemini-3-Flash 智能美化关键词"
               disabled={!prompt.trim() || isEnhancing}
               className="p-3 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all disabled:opacity-20 disabled:grayscale"
             >
@@ -554,7 +555,7 @@ function AppContent() {
     try {
       const response = await axios.post('/api/enhance-prompt', { prompt });
       setPrompt(response.data);
-      toast.success('提示词已增强');
+      toast.success('已使用 Gemini-3-Flash 增强提示词');
     } catch (error) {
       toast.error('增强提示词失败');
     } finally {
