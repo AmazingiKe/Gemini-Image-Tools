@@ -115,6 +115,7 @@ async fn main() {
         .route("/api/config", get(get_config).post(update_config))
         .route("/api/history", get(get_history).delete(clear_history))
         .route("/api/enhance-prompt", post(enhance_prompt))
+        .route("/api/chat", post(chat_completions))
         .route("/api/export-zip", get(export_zip))
         .route("/health", get(|| async { "OK" }))
         .nest_service("/images", ServeDir::new(&storage_path))
@@ -127,6 +128,62 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.unwrap();
     tracing::info!("后端服务已启动：{}", addr);
     axum::serve(listener, app).await.unwrap();
+}
+
+#[derive(Deserialize)]
+struct ChatRequest {
+    messages: Vec<models::openai::ChatMessage>,
+    model: Option<String>,
+}
+
+async fn chat_completions(
+    State(state): State<AppState>,
+    Json(payload): Json<ChatRequest>,
+) -> impl IntoResponse {
+    let (url_str, api_key) = {
+        let config = state.config.read().await;
+        (config.gemini_proxy_url.clone(), config.api_key.clone())
+    };
+
+    let url = if url_str.contains("/v1") {
+        format!("{}/chat/completions", url_str.trim_end_matches('/'))
+    } else {
+        format!("{}/v1/chat/completions", url_str.trim_end_matches('/'))
+    };
+
+    let model = payload.model.unwrap_or_else(|| "gemini-3-flash".to_string());
+
+    let chat_payload = serde_json::json!({
+        "model": model,
+        "messages": payload.messages,
+    });
+
+    let response = state.client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&chat_payload)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(data) => return (StatusCode::OK, Json(data)).into_response(),
+                    Err(e) => tracing::error!("解析聊天响应失败: {}", e),
+                }
+            } else {
+                let error_text = resp.text().await.unwrap_or_default();
+                tracing::error!("聊天请求失败 ({}): {}", status, error_text);
+            }
+            (StatusCode::BAD_GATEWAY, "Failed to call chat completion").into_response()
+        }
+        Err(e) => {
+            tracing::error!("连接代理失败: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
+    }
 }
 
 async fn get_config(State(state): State<AppState>) -> impl IntoResponse {

@@ -25,6 +25,7 @@ import { Toaster, toast } from 'sonner';
 import { TopBar } from './components/TopBar';
 import { IdleAnimation } from './components/IdleAnimation';
 import { SettingsPage } from './pages/SettingsPage';
+import { AgentPage } from './pages/Agent.tsx';
 import type { Task, AppConfig, GenerationGroup } from './types';
 
 // --- Components ---
@@ -508,6 +509,15 @@ function AppContent() {
     }
   }, [isDark]);
 
+  useEffect(() => {
+    const pending = localStorage.getItem('pending_prompt');
+    if (pending && location.pathname === '/') {
+      setPrompt(pending);
+      localStorage.removeItem('pending_prompt');
+      toast.success('已从 YOLO模式 导入提示词');
+    }
+  }, [location.pathname]);
+
   const fetchConfig = async () => {
     try {
       const response = await axios.get('/api/config');
@@ -788,6 +798,7 @@ function AppContent() {
           } />
           <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
           <Route path="/settings" element={<SettingsPage config={config} onUpdateConfig={handleUpdateConfig} />} />
+          <Route path="/agent" element={<AgentPage />} />
         </Routes>
       </div>
 
