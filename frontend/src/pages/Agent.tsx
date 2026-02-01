@@ -1,25 +1,28 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  Send, 
-  User, 
-  Bot, 
-  Loader2, 
-  Plus, 
-  Trash2, 
+import {
+  Send,
+  User,
+  Bot,
+  Loader2,
+  Plus,
+  Trash2,
   Sparkles,
   RefreshCw,
   X,
   Copy,
   ExternalLink,
   Layout,
-  Maximize2
+  Maximize2,
+  Download,
+  Upload,
+  ImageIcon
 } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Tldraw, useEditor, createShapeId } from 'tldraw';
+import { Tldraw, useEditor, createShapeId, AssetRecordType } from 'tldraw';
 import 'tldraw/tldraw.css';
 
 interface Message {
@@ -27,7 +30,11 @@ interface Message {
   content: string;
 }
 
-export function AgentPage() {
+interface AgentPageProps {
+  isDark?: boolean;
+}
+
+export function AgentPage({ isDark = false }: AgentPageProps) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([
     { role: 'system', content: 'You are Gemini YOLO, a powerful AI assistant in YOLO Mode. You help users with creative tasks, brainstorming, and daring marketing ideas.' }
@@ -37,6 +44,7 @@ export function AgentPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [editor, setEditor] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -82,24 +90,140 @@ export function AgentPage() {
     }
   }, [editor]);
 
-    const syncToWorkstation = useCallback(() => {
-        if (!editor) return;
-        
-        const shapes = editor.getCurrentPageShapes();
-        const texts = shapes
-            .filter((s: any) => s.type === 'text' || s.type === 'note')
-            .map((s: any) => s.props.text)
-            .join('\n\n');
-        
-        if (!texts) {
-            toast.error('画布上没有可用的灵感文本');
-            return;
+  const syncToWorkstation = useCallback(() => {
+    if (!editor) return;
+
+    const shapes = editor.getCurrentPageShapes();
+    const texts = shapes
+      .filter((s: any) => s.type === 'text' || s.type === 'note')
+      .map((s: any) => s.props.text)
+      .join('\n\n');
+
+    if (!texts) {
+      toast.error('画布上没有可用的灵感文本');
+      return;
+    }
+
+    localStorage.setItem('pending_prompt', texts);
+    navigate('/');
+    toast.success('已将画布上所有灵感打包发送到工作台');
+  }, [editor, navigate]);
+
+  // 导出画布为 PNG
+  const exportCanvas = useCallback(async () => {
+    if (!editor) return;
+    const shapeIds = editor.getCurrentPageShapeIds();
+    if (shapeIds.size === 0) {
+      toast.error('画布为空');
+      return;
+    }
+    try {
+      const blob = await editor.exportToBlob({
+        format: 'png',
+        quality: 1,
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `canvas-${Date.now()}.png`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('画布已导出');
+    } catch (error) {
+      toast.error('导出失败');
+    }
+  }, [editor]);
+
+  // 发送画布到生成器
+  const sendToGenerator = useCallback(async () => {
+    if (!editor) return;
+    const shapeIds = editor.getCurrentPageShapeIds();
+    if (shapeIds.size === 0) {
+      toast.error('画布为空');
+      return;
+    }
+    try {
+      const blob = await editor.exportToBlob({ format: 'png', quality: 0.9 });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        localStorage.setItem('canvas_reference_image', reader.result as string);
+        localStorage.setItem('canvas_reference_timestamp', Date.now().toString());
+        toast.success('已添加到参考图，请前往工作台使用');
+      };
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      toast.error('发送失败');
+    }
+  }, [editor]);
+
+  // 导入图片到画布
+  const importImage = useCallback(async (file: File) => {
+    if (!editor) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target?.result as string;
+
+      // 获取图片尺寸
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxSize || height > maxSize) {
+          const scale = maxSize / Math.max(width, height);
+          width *= scale;
+          height *= scale;
         }
 
-        localStorage.setItem('pending_prompt', texts);
-        navigate('/');
-        toast.success('已将画布上所有灵感打包发送到工作台');
-    }, [editor, navigate]);
+        const assetId = AssetRecordType.createId();
+        editor.createAssets([{
+          id: assetId,
+          type: 'image',
+          typeName: 'asset',
+          props: {
+            name: file.name,
+            src: dataUrl,
+            w: width,
+            h: height,
+            mimeType: file.type,
+            isAnimated: false,
+          },
+          meta: {},
+        }]);
+
+        const viewport = editor.getViewportScreenBounds();
+        const center = editor.screenToPage({ x: viewport.width / 2, y: viewport.height / 2 });
+
+        editor.createShape({
+          type: 'image',
+          x: center.x - width / 2,
+          y: center.y - height / 2,
+          props: { assetId, w: width, h: height },
+        });
+        toast.success('图片已导入');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  }, [editor]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      importImage(file);
+    }
+    e.target.value = '';
+  };
+
+  // 清空画布
+  const clearCanvas = useCallback(() => {
+    if (!editor) return;
+    if (window.confirm('确定要清空画布吗？')) {
+      editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
+      toast.success('画布已清空');
+    }
+  }, [editor]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -327,18 +451,70 @@ export function AgentPage() {
                         创意画布
                     </h3>
                 </div>
-                
-                <button 
+
+                <button
                     onClick={syncToWorkstation}
                     className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all flex items-center gap-2"
                 >
                     <ExternalLink className="w-3 h-3" />
-                    同步所有灵感至工作台
+                    同步灵感至工作台
                 </button>
             </div>
-            
+
+            {/* Canvas Toolbar - Right */}
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl text-gray-600 dark:text-gray-400 hover:text-blue-500 transition-colors"
+                  title="导入图片"
+                >
+                  <Upload className="w-4 h-4" />
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={exportCanvas}
+                  className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl text-gray-600 dark:text-gray-400 hover:text-green-500 transition-colors"
+                  title="导出画布"
+                >
+                  <Download className="w-4 h-4" />
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={sendToGenerator}
+                  className="p-3 bg-black dark:bg-white text-white dark:text-black rounded-2xl shadow-xl hover:opacity-90 transition-opacity flex items-center gap-2"
+                  title="发送到生成器"
+                >
+                  <Send className="w-4 h-4" />
+                  <span className="text-[10px] font-bold hidden sm:inline">用于生成</span>
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={clearCanvas}
+                  className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl text-gray-600 dark:text-gray-400 hover:text-red-500 transition-colors"
+                  title="清空画布"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </motion.button>
+            </div>
+
             <div className="absolute bottom-4 right-4 z-10">
-                <button 
+                <button
                     onClick={() => {
                         if (editor) {
                             const shapes = editor.getShapePageBounds(editor.getCurrentPageId());
@@ -348,12 +524,19 @@ export function AgentPage() {
                     className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl hover:scale-110 transition-all text-gray-500"
                 >
                     <Maximize2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                          </div>
-                                        </Panel>
-                                      </PanelGroup>
-                                    </div>
-                                  );
-                                }
+                </button>
+            </div>
+
+            {/* Footer attribution */}
+            <div className="absolute bottom-4 left-4 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-black/5 dark:border-white/10 shadow-xl">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    Powered by <a href="https://github.com/ArtisanLabs/Jaaz" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Jaaz</a> & Tldraw
+                </p>
+            </div>
+          </div>
+        </Panel>
+      </PanelGroup>
+    </div>
+  );
+}
                                 

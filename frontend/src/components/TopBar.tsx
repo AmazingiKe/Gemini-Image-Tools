@@ -31,8 +31,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const navItems = [
     { id: '/', label: '工作台', icon: LayoutDashboard },
-    { id: '/canvas', label: '白板', icon: PenTool },
-    { id: '/agent', label: 'YOLO模式', icon: MessageSquare },
+    { id: '/agent', label: '创意工作台', icon: MessageSquare },
     { id: '/history', label: '历史库', icon: History },
   ];
 

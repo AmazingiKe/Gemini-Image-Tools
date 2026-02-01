@@ -26,7 +26,6 @@ import { TopBar } from './components/TopBar';
 import { IdleAnimation } from './components/IdleAnimation';
 import { SettingsPage } from './pages/SettingsPage';
 import { AgentPage } from './pages/Agent.tsx';
-import { CanvasPage } from './pages/CanvasPage';
 import type { Task, AppConfig, GenerationGroup } from './types';
 
 // --- Components ---
@@ -798,9 +797,8 @@ function AppContent() {
             />
           } />
           <Route path="/history" element={<HistoryPage history={history} onClear={handleClearHistory} />} />
-          <Route path="/canvas" element={<CanvasPage isDark={isDark} />} />
           <Route path="/settings" element={<SettingsPage config={config} onUpdateConfig={handleUpdateConfig} />} />
-          <Route path="/agent" element={<AgentPage />} />
+          <Route path="/agent" element={<AgentPage isDark={isDark} />} />
         </Routes>
       </div>
 
