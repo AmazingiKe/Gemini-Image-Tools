@@ -17,7 +17,7 @@ Gemini-Image-Tools 是一个基于 OpenAI 协议标准构建的专业图像生�
 
 ## 🛠️ 技术栈
 
-- **前端**: React 19, TypeScript, Tailwind CSS, Framer Motion (动效), Sonner (消息), Excalidraw (白板)
+- **前端**: React 19, TypeScript, Tailwind CSS, Framer Motion (动效), Sonner (消息), Tldraw (白板)
 - **后端**: Rust (Axum, Tokio), Reqwest, Zip-rs
 - **协议**: OpenAI Chat Completions 兼容协议
 
@@ -58,18 +58,23 @@ docker-compose up -d
 
 ## 🎨 白板功能
 
-白板功能基于 [Excalidraw](https://excalidraw.com/) 构建，灵感来自 [Jaaz](https://github.com/11cafe/jaaz) 项目。
+创意画布功能基于 [Tldraw](https://tldraw.com/) 构建，提供专业的绘图和创意工作台体验。
+
+> **声明**：本项目白板功能仅参考了 [Jaaz](https://github.com/11cafe/jaaz) 的产品概念与交互设计思路，**代码架构完全独立重构**，未使用任何 Jaaz 源代码。技术栈差异如下：
+> - Jaaz: Excalidraw + Python/FastAPI + WebSocket
+> - 本项目: Tldraw + Rust/Axum + REST API
 
 ### 功能特性：
 - **自由绘制**：支持画笔、形状、文字等多种绘图工具
 - **图片导入**：拖拽或点击导入图片到画布
+- **AI 生成**：直接从画布内容生成图片，结果自动添加回画布
 - **导出功能**：将画布导出为 PNG 图片
 - **发送到生成器**：一键将画布内容作为参考图发送到图像生成工作台
 
 ## 🙏 致谢
 
-- [Jaaz](https://github.com/11cafe/jaaz) - 世界首个开源多模态画布创意 Agent，本项目的白板功能受其启发并参考了其实现方式
-- [Excalidraw](https://github.com/excalidraw/excalidraw) - 优秀的开源白板绘图库
+- [Tldraw](https://github.com/tldraw/tldraw) - 优秀的开源白板绘图库
+- [Jaaz](https://github.com/11cafe/jaaz) - 多模态画布创意 Agent，本项目的白板功能概念受其启发（仅参考概念，架构独立重构）
 
 ## 📄 许可证
 

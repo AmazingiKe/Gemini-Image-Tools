@@ -15,7 +15,8 @@ import {
   Maximize2,
   Download,
   Upload,
-  ImageIcon
+  ImageIcon,
+  Wand2
 } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -134,7 +135,7 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
     }
   }, [editor]);
 
-  // 发送画布到生成器
+  // 发送画布到生成器（保存为参考图）
   const sendToGenerator = useCallback(async () => {
     if (!editor) return;
     const shapeIds = editor.getCurrentPageShapeIds();
@@ -153,6 +154,123 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
       reader.readAsDataURL(blob);
     } catch (error) {
       toast.error('发送失败');
+    }
+  }, [editor]);
+
+  // 状态：是否正在生成图片
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // 直接从画布生成图片（核心功能）
+  const generateFromCanvas = useCallback(async () => {
+    if (!editor) {
+      toast.error('画布未初始化');
+      return;
+    }
+
+    const shapeIds = editor.getCurrentPageShapeIds();
+    if (shapeIds.size === 0) {
+      toast.error('画布为空，请先绘制或添加内容');
+      return;
+    }
+
+    setIsGenerating(true);
+    const toastId = toast.loading('正在从画布生成图片...');
+
+    try {
+      // 1. 导出画布为 base64
+      const blob = await editor.exportToBlob({ format: 'png', quality: 0.9 });
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      // 2. 提取画布上的文本作为提示词
+      const shapes = editor.getCurrentPageShapes();
+      const textContent = shapes
+        .filter((s: any) => s.type === 'text' || s.type === 'note')
+        .map((s: any) => s.props.text || '')
+        .filter((t: string) => t.trim())
+        .join(', ');
+
+      const prompt = textContent || '根据这张草图生成一张精美的图片，保持原有的构图和风格';
+
+      // 3. 调用图片生成 API
+      const response = await axios.post('/v1/images/generations', {
+        prompt: prompt,
+        model: 'gemini-2.0-flash-exp-image-generation',
+        n: 1,
+        size: '1024x1024',
+        image: base64  // 发送画布图片作为参考
+      });
+
+      // 4. 处理生成结果
+      if (response.data?.data?.[0]?.url) {
+        const imageUrl = response.data.data[0].url;
+
+        // 获取图片并添加到画布
+        const imgResponse = await fetch(imageUrl);
+        const imgBlob = await imgResponse.blob();
+        const imgDataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(imgBlob);
+        });
+
+        // 获取图片尺寸
+        const img = new Image();
+        await new Promise((resolve) => {
+          img.onload = resolve;
+          img.src = imgDataUrl;
+        });
+
+        const maxSize = 500;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxSize || height > maxSize) {
+          const scale = maxSize / Math.max(width, height);
+          width *= scale;
+          height *= scale;
+        }
+
+        // 添加到画布
+        const assetId = AssetRecordType.createId();
+        editor.createAssets([{
+          id: assetId,
+          type: 'image',
+          typeName: 'asset',
+          props: {
+            name: `generated-${Date.now()}.png`,
+            src: imgDataUrl,
+            w: width,
+            h: height,
+            mimeType: 'image/png',
+            isAnimated: false,
+          },
+          meta: {},
+        }]);
+
+        const viewport = editor.getViewportScreenBounds();
+        const center = editor.screenToPage({ x: viewport.width / 2, y: viewport.height / 2 });
+
+        editor.createShape({
+          type: 'image',
+          x: center.x + 100,
+          y: center.y - height / 2,
+          props: { assetId, w: width, h: height },
+        });
+
+        toast.success('图片生成成功！', { id: toastId });
+      } else {
+        throw new Error('生成响应格式错误');
+      }
+    } catch (error: any) {
+      console.error('生成失败:', error);
+      const errorMsg = error.response?.data || error.message || '未知错误';
+      toast.error(`生成失败: ${typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg)}`, { id: toastId });
+    } finally {
+      setIsGenerating(false);
     }
   }, [editor]);
 
@@ -503,6 +621,24 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
                   title="导出画布"
                 >
                   <Download className="w-4 h-4" />
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={generateFromCanvas}
+                  disabled={isGenerating}
+                  className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-2xl shadow-xl hover:opacity-90 transition-opacity flex items-center gap-2 disabled:opacity-50"
+                  title="从画布生成图片"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="w-4 h-4" />
+                  )}
+                  <span className="text-[10px] font-bold hidden sm:inline">
+                    {isGenerating ? '生成中...' : '生成图片'}
+                  </span>
                 </motion.button>
 
                 <motion.button
