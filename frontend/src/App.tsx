@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Send, 
   Image as ImageIcon, 
@@ -452,20 +452,23 @@ function AppContent() {
   const [isDragging, setIsDragging] = useState(false);
   const location = useLocation();
 
-  const handleDrag = (e: React.DragEvent) => {
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      dragCounter.current++;
       setIsDragging(true);
-    } else if (e.type === 'dragleave') {
-      // Check if we are actually leaving the window or just moving over an element
-      const rect = document.documentElement.getBoundingClientRect();
-      if (
-        e.clientX <= rect.left ||
-        e.clientX >= rect.right ||
-        e.clientY <= rect.top ||
-        e.clientY >= rect.bottom
-      ) {
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer?.types?.includes('Files')) {
+      dragCounter.current--;
+      if (dragCounter.current <= 0) {
         setIsDragging(false);
       }
     }
@@ -475,6 +478,7 @@ function AppContent() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
+    dragCounter.current = 0;
 
     const files = Array.from(e.dataTransfer.files);
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
@@ -499,6 +503,21 @@ function AppContent() {
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setIsDark(true);
     }
+
+    // 全局兜底关闭逻辑
+    const forceReset = () => {
+      setIsDragging(false);
+      dragCounter.current = 0;
+    };
+
+    // 使用捕获阶段 (true)，确保无论子组件是否 stopPropagation，都能重置状态
+    window.addEventListener('drop', forceReset, true);
+    window.addEventListener('dragend', forceReset, true);
+    
+    return () => {
+      window.removeEventListener('drop', forceReset, true);
+      window.removeEventListener('dragend', forceReset, true);
+    };
   }, []);
 
   useEffect(() => {
@@ -704,10 +723,10 @@ function AppContent() {
 
   return (
     <div 
-      className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] flex flex-col font-sans text-[#1d1d1f] dark:text-[#f5f5f7] selection:bg-blue-100 transition-colors duration-700 relative"
-      onDragEnter={handleDrag}
-      onDragOver={handleDrag}
-      onDragLeave={handleDrag}
+      className="h-screen bg-[#f5f5f7] dark:bg-[#000000] flex flex-col font-sans text-[#1d1d1f] dark:text-[#f5f5f7] selection:bg-blue-100 transition-colors duration-700 relative overflow-hidden"
+      onDragEnter={handleDragEnter}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <Toaster position="top-center" richColors theme={isDark ? 'dark' : 'light'} />

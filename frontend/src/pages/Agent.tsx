@@ -282,7 +282,7 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
   };
 
   return (
-    <div className="flex-1 h-[calc(100vh-48px)] bg-[#f5f5f7] dark:bg-black">
+    <div className="flex-1 h-full bg-[#f5f5f7] dark:bg-black">
       <PanelGroup direction="horizontal">
         {/* Left Panel: Chat */}
         <Panel defaultSize={40} minSize={30}>
@@ -415,6 +415,19 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
                 e.preventDefault();
+
+                // 处理拖入的文件（图片）
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length > 0) {
+                  const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                  if (imageFiles.length > 0) {
+                    imageFiles.forEach(file => importImage(file));
+                    e.stopPropagation(); // 阻止冒泡到 App.tsx，避免重复添加
+                    return;
+                  }
+                }
+
+                // 处理拖入的文本（灵感）
                 const text = e.dataTransfer.getData('text/plain');
                 const role = e.dataTransfer.getData('application/yolo-role') || 'assistant';
                 if (text && editor) {
@@ -440,6 +453,7 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
                     onMount={(editor) => setEditor(editor)}
                     inferDarkMode={true}
                     hideUi={false}
+                    locale="en"
                 />
             </div>
             
