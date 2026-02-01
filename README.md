@@ -58,7 +58,7 @@ docker-compose up -d
 
 ## 🎨 白板功能
 
-白板功能基于 [Excalidraw](https://excalidraw.com/) 构建，灵感来自 [Jaaz](https://github.com/ArtisanLabs/Jaaz) 项目。
+白板功能基于 [Excalidraw](https://excalidraw.com/) 构建，灵感来自 [Jaaz](https://github.com/11cafe/jaaz) 项目。
 
 ### 功能特性：
 - **自由绘制**：支持画笔、形状、文字等多种绘图工具
@@ -68,7 +68,7 @@ docker-compose up -d
 
 ## 🙏 致谢
 
-- [Jaaz](https://github.com/ArtisanLabs/Jaaz) - 世界首个开源多模态画布创意 Agent，本项目的白板功能受其启发并参考了其实现方式
+- [Jaaz](https://github.com/11cafe/jaaz) - 世界首个开源多模态画布创意 Agent，本项目的白板功能受其启发并参考了其实现方式
 - [Excalidraw](https://github.com/excalidraw/excalidraw) - 优秀的开源白板绘图库
 
 ## 📄 许可证
