@@ -23,7 +23,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Tldraw, useEditor, createShapeId, AssetRecordType } from 'tldraw';
+import { Tldraw, useEditor, createShapeId, AssetRecordType, exportToBlob, toRichText } from 'tldraw';
+import type { TLUiOverrides } from 'tldraw';
 import 'tldraw/tldraw.css';
 
 interface Message {
@@ -47,6 +48,9 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
   const [editor, setEditor] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 状态：是否正在生成图片
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -66,7 +70,7 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
         x: Math.random() * 400 + 100,
         y: Math.random() * 400 + 100,
         props: {
-          text: content.length > 200 ? content.substring(0, 200) + '...' : content,
+          richText: toRichText(content.length > 200 ? content.substring(0, 200) + '...' : content),
           font: 'sans',
           size: 'm',
           color: role === 'user' ? 'blue' : 'black',
@@ -83,7 +87,7 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
                 x: Math.random() * 400 + 300,
                 y: Math.random() * 400 + 300,
                 props: {
-                    text: content,
+                    richText: toRichText(content),
                     color: role === 'user' ? 'blue' : 'grey',
                 }
             }
@@ -97,7 +101,16 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
     const shapes = editor.getCurrentPageShapes();
     const texts = shapes
       .filter((s: any) => s.type === 'text' || s.type === 'note')
-      .map((s: any) => s.props.text)
+      .map((s: any) => {
+        if (s.props.richText) {
+            try {
+                return editor.getShapeUtil(s).getText(s);
+            } catch (e) {
+                return s.props.text || '';
+            }
+        }
+        return s.props.text || '';
+      })
       .join('\n\n');
 
     if (!texts) {
@@ -119,9 +132,10 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
       return;
     }
     try {
-      const blob = await editor.exportToBlob({
+      const shapeArray = Array.from(shapeIds);
+      const blob = await exportToBlob(editor, {
         format: 'png',
-        quality: 1,
+        ids: shapeArray,
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -131,20 +145,25 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
       URL.revokeObjectURL(url);
       toast.success('画布已导出');
     } catch (error) {
+      console.error('导出失败:', error);
       toast.error('导出失败');
     }
   }, [editor]);
 
   // 发送画布到生成器（保存为参考图）
-  const sendToGenerator = useCallback(async () => {
+  const sendToGenerator = useCallback(async (ids?: any) => {
     if (!editor) return;
-    const shapeIds = editor.getCurrentPageShapeIds();
+    const shapeIds = ids || editor.getCurrentPageShapeIds();
     if (shapeIds.size === 0) {
       toast.error('画布为空');
       return;
     }
     try {
-      const blob = await editor.exportToBlob({ format: 'png', quality: 0.9 });
+      const shapeArray = Array.from(shapeIds);
+      const blob = await exportToBlob(editor, {
+        format: 'png',
+        ids: shapeArray,
+      });
       const reader = new FileReader();
       reader.onloadend = () => {
         localStorage.setItem('canvas_reference_image', reader.result as string);
@@ -153,23 +172,21 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
       };
       reader.readAsDataURL(blob);
     } catch (error) {
+      console.error('发送失败:', error);
       toast.error('发送失败');
     }
   }, [editor]);
 
-  // 状态：是否正在生成图片
-  const [isGenerating, setIsGenerating] = useState(false);
-
   // 直接从画布生成图片（核心功能）
-  const generateFromCanvas = useCallback(async () => {
-    if (!editor) {
-      toast.error('画布未初始化');
+  const generateFromCanvas = useCallback(async (ids?: any) => {
+    if (!editor || typeof editor.getCurrentPageShapeIds !== 'function') {
+      toast.error('画布未初始化，请稍候再试');
       return;
     }
 
-    const shapeIds = editor.getCurrentPageShapeIds();
-    if (shapeIds.size === 0) {
-      toast.error('画布为空，请先绘制或添加内容');
+    let shapeIds = ids || editor.getCurrentPageShapeIds();
+    if (!shapeIds || shapeIds.size === 0) {
+      toast.error('画布内容为空');
       return;
     }
 
@@ -178,7 +195,11 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
 
     try {
       // 1. 导出画布为 base64
-      const blob = await editor.exportToBlob({ format: 'png', quality: 0.9 });
+      const shapeArray = Array.from(shapeIds);
+      const blob = await exportToBlob(editor, {
+        format: 'png',
+        ids: shapeArray,
+      });
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
@@ -190,7 +211,19 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
       const shapes = editor.getCurrentPageShapes();
       const textContent = shapes
         .filter((s: any) => s.type === 'text' || s.type === 'note')
-        .map((s: any) => s.props.text || '')
+        .map((s: any) => {
+            if (s.props.richText) {
+                // If it's richText, we try to extract text from it. 
+                // In tldraw, richText often has a 'text' property or can be converted.
+                // A common way is to use editor.getShapeUtil(s).getText(s)
+                try {
+                    return editor.getShapeUtil(s).getText(s);
+                } catch (e) {
+                    return s.props.text || '';
+                }
+            }
+            return s.props.text || '';
+        })
         .filter((t: string) => t.trim())
         .join(', ');
 
@@ -342,6 +375,99 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
       toast.success('画布已清空');
     }
   }, [editor]);
+
+  const uiOverrides = React.useMemo<TLUiOverrides>(() => ({
+    translations: {
+      'en': {
+        'arrow-kind-style.arc': '弧线',
+        'arrow-kind-style.elbow': '折线',
+        'tool.rich-text-toolbar-title': '富文本工具栏',
+        'tool.rich-text-orderedList': '有序列表',
+        'a11y.status': '状态',
+        'a11y.select-shape': '选择图形',
+        'a11y.select-shape-direction': '选择图形方向',
+        'a11y.enter-leave-container': '进入/离开容器',
+        'a11y.repeat-shape': '重复图形',
+        'a11y.move-shape': '移动图形',
+        'a11y.move-shape-faster': '快速移动图形',
+        'a11y.enlarge-shape': '放大图形',
+        'a11y.shrink-shape': '缩小图形',
+        'a11y.pan-camera': '平移视角',
+        'a11y.adjust-shape-styles': '调整图形样式',
+        'people-menu.avatar-color': '头像颜色',
+        'edit-link-dialog.external-link': '外部链接',
+        'shortcuts-dialog.a11y': '辅助功能快捷键',
+        'shortcuts-dialog.text-formatting': '文本格式快捷键',
+        'navigation-zone.title': '导航区域',
+        'navigation-zone.minimap': '小地图',
+        'toast.success': '成功',
+        'toast.info': '信息',
+        'toast.warning': '警告',
+        'app.loading': '正在加载...',
+        'handle.resize-top': '向上调整大小',
+        'handle.resize-bottom': '向下调整大小',
+        'handle.resize-left': '向左调整大小',
+        'handle.resize-right': '向右调整大小',
+        'handle.resize-top-left': '向左上调整大小',
+        'handle.resize-top-right': '向右上调整大小',
+        'handle.resize-bottom-left': '向左下调整大小',
+        'handle.resize-bottom-right': '向右下调整大小',
+        'handle.rotate.top_left_rotate': '左上旋转',
+        'handle.rotate.top_right_rotate': '右上旋转',
+        'handle.rotate.bottom_left_rotate': '左下旋转',
+        'handle.rotate.bottom_right_rotate': '右下旋转',
+        'handle.crop.top': '向上裁剪',
+        'handle.crop.bottom': '向下裁剪',
+        'handle.crop.left': '向左裁剪',
+        'handle.crop.right': '向右裁剪',
+        'handle.crop.top-left': '向左上裁剪',
+        'handle.crop.top-right': '向右上裁剪',
+        'handle.crop.bottom-left': '向左下裁剪',
+        'handle.crop.bottom-right': '向右下裁剪',
+        'ui.checked': '已选中',
+        'ui.unchecked': '未选中',
+      }
+    },
+    contextMenu(editor, schema) {
+      const selectedShapes = editor.getSelectedShapes();
+      const hasImage = selectedShapes.some(s => s.type === 'image');
+      
+      if (hasImage) {
+        schema.push({
+          id: 'yolo-actions-group',
+          type: 'group',
+          checkbox: false,
+          disabled: false,
+          readonlyOk: true,
+          children: [
+            {
+              id: 'generate-from-selection',
+              type: 'item',
+              actionItem: {
+                label: '以此为参考生成',
+                onSelect: () => {
+                   const ids = new Set(selectedShapes.map(s => s.id));
+                   generateFromCanvas(ids);
+                }
+              }
+            },
+            {
+              id: 'send-to-generator',
+              type: 'item',
+              actionItem: {
+                label: '发送到工作台',
+                onSelect: () => {
+                   const ids = new Set(selectedShapes.map(s => s.id));
+                   sendToGenerator(ids);
+                }
+              }
+            }
+          ]
+        });
+      }
+      return schema;
+    }
+  }), [generateFromCanvas, sendToGenerator]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -557,7 +683,7 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
                             x: point.x,
                             y: point.y,
                             props: {
-                                text: text,
+                                richText: toRichText(text),
                                 color: role === 'user' ? 'blue' : 'grey',
                             }
                         }
@@ -569,100 +695,13 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
             <div className="absolute inset-0 z-0">
                 <Tldraw 
                     onMount={(editor) => setEditor(editor)}
+                    overrides={uiOverrides}
                     inferDarkMode={true}
                     hideUi={false}
                     locale="en"
                 />
             </div>
             
-            {/* Canvas Header/Overlay */}
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
-                <div className="bg-white/80 dark:bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-black/5 dark:border-white/10 shadow-xl">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-black dark:text-white flex items-center gap-2">
-                        <Sparkles className="w-3 h-3 text-blue-500" />
-                        创意画布
-                    </h3>
-                </div>
-
-                <button
-                    onClick={syncToWorkstation}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all flex items-center gap-2"
-                >
-                    <ExternalLink className="w-3 h-3" />
-                    同步灵感至工作台
-                </button>
-            </div>
-
-            {/* Canvas Toolbar - Right */}
-            <div className="absolute top-4 right-4 z-10 flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl text-gray-600 dark:text-gray-400 hover:text-blue-500 transition-colors"
-                  title="导入图片"
-                >
-                  <Upload className="w-4 h-4" />
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={exportCanvas}
-                  className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl text-gray-600 dark:text-gray-400 hover:text-green-500 transition-colors"
-                  title="导出画布"
-                >
-                  <Download className="w-4 h-4" />
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={generateFromCanvas}
-                  disabled={isGenerating}
-                  className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-2xl shadow-xl hover:opacity-90 transition-opacity flex items-center gap-2 disabled:opacity-50"
-                  title="从画布生成图片"
-                >
-                  {isGenerating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Wand2 className="w-4 h-4" />
-                  )}
-                  <span className="text-[10px] font-bold hidden sm:inline">
-                    {isGenerating ? '生成中...' : '生成图片'}
-                  </span>
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={sendToGenerator}
-                  className="p-3 bg-black dark:bg-white text-white dark:text-black rounded-2xl shadow-xl hover:opacity-90 transition-opacity flex items-center gap-2"
-                  title="发送到生成器"
-                >
-                  <Send className="w-4 h-4" />
-                  <span className="text-[10px] font-bold hidden sm:inline">用于生成</span>
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={clearCanvas}
-                  className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl text-gray-600 dark:text-gray-400 hover:text-red-500 transition-colors"
-                  title="清空画布"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </motion.button>
-            </div>
-
             <div className="absolute bottom-4 right-4 z-10">
                 <button
                     onClick={() => {
@@ -675,13 +714,6 @@ export function AgentPage({ isDark = false }: AgentPageProps) {
                 >
                     <Maximize2 className="w-4 h-4" />
                 </button>
-            </div>
-
-            {/* Footer attribution */}
-            <div className="absolute bottom-4 left-4 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-black/5 dark:border-white/10 shadow-xl">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                    Powered by <a href="https://github.com/ArtisanLabs/Jaaz" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Jaaz</a> & Tldraw
-                </p>
             </div>
           </div>
         </Panel>
