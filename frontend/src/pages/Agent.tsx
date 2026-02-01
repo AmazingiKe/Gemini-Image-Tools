@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Send, 
   User, 
@@ -10,12 +10,17 @@ import {
   RefreshCw,
   X,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Layout,
+  Maximize2
 } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { Tldraw, useEditor, createShapeId } from 'tldraw';
+import 'tldraw/tldraw.css';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -31,6 +36,7 @@ export function AgentPage() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [editor, setEditor] = useState<any>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -39,6 +45,61 @@ export function AgentPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const projectToCanvas = useCallback((content: string, role: string) => {
+    if (!editor) return;
+
+    const id = createShapeId();
+    editor.createShapes([
+      {
+        id,
+        type: 'text',
+        x: Math.random() * 400 + 100,
+        y: Math.random() * 400 + 100,
+        props: {
+          text: content.length > 200 ? content.substring(0, 200) + '...' : content,
+          font: 'sans',
+          size: 'm',
+          color: role === 'user' ? 'blue' : 'black',
+        },
+      },
+    ]);
+    
+    // If it's a long message, maybe also create a note
+    if (content.length > 200) {
+        editor.createShapes([
+            {
+                id: createShapeId(),
+                type: 'note',
+                x: Math.random() * 400 + 300,
+                y: Math.random() * 400 + 300,
+                props: {
+                    text: content,
+                    color: role === 'user' ? 'blue' : 'grey',
+                }
+            }
+        ]);
+    }
+  }, [editor]);
+
+    const syncToWorkstation = useCallback(() => {
+        if (!editor) return;
+        
+        const shapes = editor.getCurrentPageShapes();
+        const texts = shapes
+            .filter((s: any) => s.type === 'text' || s.type === 'note')
+            .map((s: any) => s.props.text)
+            .join('\n\n');
+        
+        if (!texts) {
+            toast.error('画布上没有可用的灵感文本');
+            return;
+        }
+
+        localStorage.setItem('pending_prompt', texts);
+        navigate('/');
+        toast.success('已将画布上所有灵感打包发送到工作台');
+    }, [editor, navigate]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -64,7 +125,12 @@ export function AgentPage() {
       });
 
       const assistantContent = response.data.choices[0].message.content;
-      setMessages(prev => [...prev, { role: 'assistant', content: assistantContent }]);
+      const assistantMessage: Message = { role: 'assistant', content: assistantContent };
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Auto project assistant message to canvas
+      projectToCanvas(assistantContent, 'assistant');
+      
     } catch (error) {
       toast.error('发送失败，请检查后端服务及 API 配置');
       console.error(error);
@@ -76,8 +142,11 @@ export function AgentPage() {
   const clearHistory = () => {
     if (window.confirm('确定要清空对话记录吗？')) {
       setMessages([
-        { role: 'system', content: 'You are Gemini Jaaz, a powerful AI assistant focused on helping users with their creative tasks and marketing automation.' }
+        { role: 'system', content: 'You are Gemini YOLO, a powerful AI assistant in YOLO Mode. You help users with creative tasks, brainstorming, and daring marketing ideas.' }
       ]);
+      if (editor) {
+          editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
+      }
     }
   };
 
@@ -89,150 +158,202 @@ export function AgentPage() {
   };
 
   return (
-    <main className="flex-1 flex flex-col h-[calc(100vh-64px)] overflow-hidden">
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-        <div className="max-w-4xl mx-auto space-y-6 pb-24">
-          <AnimatePresence initial={false}>
-            {messages.filter(m => m.role !== 'system').map((msg, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex gap-4 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
-                    msg.role === 'user' 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-white dark:bg-[#1d1d1f] text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-white/5'
-                  }`}>
-                    {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-                  </div>
-                  <div className={`p-4 rounded-[1.5rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)] border relative group/msg-content ${
-                    msg.role === 'user'
-                      ? 'bg-white dark:bg-[#1d1d1f] border-blue-500/10 text-gray-800 dark:text-gray-100'
-                      : 'bg-white dark:bg-[#1d1d1f] border-gray-100 dark:border-white/5 text-gray-800 dark:text-gray-100'
-                  }`}>
-                    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap leading-relaxed">
-                      {msg.content}
-                    </div>
-                    {msg.role === 'assistant' && (
-                      <div className="absolute top-2 right-2 opacity-0 group-hover/msg-content:opacity-100 transition-opacity flex gap-1">
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(msg.content);
-                            toast.success('已复制到剪贴板');
-                          }}
-                          className="p-1.5 bg-gray-100 dark:bg-white/10 rounded-lg hover:bg-gray-200 dark:hover:bg-white/20 transition-all"
-                          title="复制内容"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            localStorage.setItem('pending_prompt', msg.content);
-                            navigate('/');
-                            toast.success('已发送到工作台');
-                          }}
-                          className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all"
-                          title="发送到工作台"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </button>
+    <div className="flex-1 h-[calc(100vh-48px)] bg-[#f5f5f7] dark:bg-black">
+      <PanelGroup direction="horizontal">
+        {/* Left Panel: Chat */}
+        <Panel defaultSize={40} minSize={30}>
+          <div className="h-full flex flex-col relative border-r border-gray-200 dark:border-white/5">
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
+              <div className="space-y-6 pb-24">
+                <AnimatePresence initial={false}>
+                  {messages.filter(m => m.role !== 'system').map((msg, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`flex gap-3 max-w-[90%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                          msg.role === 'user' 
+                            ? 'bg-blue-500 text-white' 
+                            : 'bg-white dark:bg-[#1d1d1f] text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-white/5'
+                        }`}>
+                          {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                        </div>
+                          <div 
+                            draggable="true"
+                            onDragStart={(e) => {
+                                e.dataTransfer.setData('text/plain', msg.content);
+                                e.dataTransfer.setData('application/yolo-role', msg.role);
+                            }}
+                            className={`p-3 rounded-[1.2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)] border relative group/msg-content cursor-grab active:cursor-grabbing ${
+                          msg.role === 'user'
+                            ? 'bg-white dark:bg-[#1d1d1f] border-blue-500/10 text-gray-800 dark:text-gray-100'
+                            : 'bg-white dark:bg-[#1d1d1f] border-gray-100 dark:border-white/5 text-gray-800 dark:text-gray-100'
+                        }`}>
+                          <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap leading-relaxed text-[13px]">
+                            {msg.content}
+                          </div>
+                          <div className="absolute top-2 right-2 opacity-0 group-hover/msg-content:opacity-100 transition-opacity flex gap-1">
+                            <button
+                                onClick={() => projectToCanvas(msg.content, msg.role)}
+                                className="p-1 bg-gray-100 dark:bg-white/10 rounded-md hover:bg-gray-200 dark:hover:bg-white/20 transition-all"
+                                title="投影到画布"
+                            >
+                                <Layout className="w-3 h-3" />
+                            </button>
+                            {msg.role === 'assistant' && (
+                              <button
+                                onClick={() => {
+                                  localStorage.setItem('pending_prompt', msg.content);
+                                  navigate('/');
+                                  toast.success('已发送到工作台');
+                                }}
+                                className="p-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-all"
+                                title="发送到工作台"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-white dark:bg-[#1d1d1f] flex items-center justify-center border border-gray-100 dark:border-white/5">
+                        <Bot className="w-4 h-4 text-blue-500 animate-pulse" />
+                      </div>
+                      <div className="bg-white dark:bg-[#1d1d1f] p-3 rounded-[1.2rem] border border-gray-100 dark:border-white/5 flex items-center gap-2">
+                        <div className="flex gap-1">
+                          <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                          <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                          <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {isLoading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex justify-start"
-            >
-              <div className="flex gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-white dark:bg-[#1d1d1f] flex items-center justify-center border border-gray-100 dark:border-white/5">
-                  <Bot className="w-5 h-5 text-blue-500 animate-pulse" />
-                </div>
-                <div className="bg-white dark:bg-[#1d1d1f] p-4 rounded-[1.5rem] border border-gray-100 dark:border-white/5 flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <motion.div 
-                      animate={{ scale: [1, 1.2, 1] }} 
-                      transition={{ repeat: Infinity, duration: 1, delay: 0 }}
-                      className="w-1.5 h-1.5 bg-blue-500 rounded-full" 
-                    />
-                    <motion.div 
-                      animate={{ scale: [1, 1.2, 1] }} 
-                      transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
-                      className="w-1.5 h-1.5 bg-blue-500 rounded-full" 
-                    />
-                    <motion.div 
-                      animate={{ scale: [1, 1.2, 1] }} 
-                      transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
-                      className="w-1.5 h-1.5 bg-blue-500 rounded-full" 
-                    />
-                  </div>
-                </div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
-            </motion.div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+            </div>
 
-      {/* Input Area */}
-      <div className="p-4 md:p-8 bg-gradient-to-t from-[#f5f5f7] via-[#f5f5f7] to-transparent dark:from-black dark:via-black dark:to-transparent">
-        <div className="max-w-3xl mx-auto">
-          <div className="relative group">
-            <div className="bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-3xl rounded-[2rem] border border-white/40 dark:border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.12)] p-2 flex flex-col gap-2 transition-all focus-within:ring-2 focus-within:ring-blue-500/20">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder="询问 YOLO..."
-                className="w-full bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-3 px-4 text-sm font-medium outline-none placeholder:text-gray-400 resize-none max-h-[200px]"
-                rows={1}
-              />
-              <div className="flex items-center justify-between px-2 pb-1">
-                <div className="flex gap-2">
-                  <button
-                    onClick={clearHistory}
-                    title="清空记录"
-                    className="p-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-all rounded-xl hover:bg-gray-100 dark:hover:bg-white/5"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    className="p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all rounded-xl hover:bg-gray-100 dark:hover:bg-white/5"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                  </button>
+            {/* Input Area */}
+            <div className="p-4 bg-white dark:bg-[#1d1d1f] border-t border-gray-200 dark:border-white/5">
+              <div className="relative group">
+                <div className="bg-[#f5f5f7] dark:bg-black rounded-2xl border border-transparent p-2 flex flex-col gap-2 transition-all focus-within:ring-2 focus-within:ring-blue-500/20">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="询问 YOLO..."
+                    className="w-full bg-transparent border-none focus:ring-0 text-[#1d1d1f] dark:text-[#f5f5f7] py-2 px-3 text-sm font-medium outline-none placeholder:text-gray-400 resize-none max-h-[150px]"
+                    rows={1}
+                  />
+                  <div className="flex items-center justify-between px-2 pb-1">
+                    <div className="flex gap-2">
+                      <button onClick={clearHistory} title="清空记录" className="p-1.5 text-gray-400 hover:text-red-500 transition-all">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={handleSend}
+                      disabled={!input.trim() || isLoading}
+                      className="bg-black dark:bg-white text-white dark:text-black p-2 rounded-xl shadow-lg disabled:opacity-20 transition-all flex items-center justify-center"
+                    >
+                      {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    </motion.button>
+                  </div>
                 </div>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleSend}
-                  disabled={!input.trim() || isLoading}
-                  className="bg-black dark:bg-white text-white dark:text-black p-2.5 rounded-2xl shadow-lg disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center"
-                >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </motion.button>
               </div>
             </div>
           </div>
-          <p className="text-center mt-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest opacity-50">
-            YOLO Mode Powered by Gemini-3-Flash
-          </p>
-        </div>
-      </div>
-    </main>
-  );
-}
+        </Panel>
+
+        <PanelResizeHandle className="w-1 bg-gray-200 dark:bg-white/5 hover:bg-blue-500 transition-colors cursor-col-resize" />
+
+        {/* Right Panel: Canvas */}
+        <Panel defaultSize={60} minSize={40}>
+          <div 
+            className="h-full relative overflow-hidden bg-white dark:bg-[#1d1d1f]"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+                e.preventDefault();
+                const text = e.dataTransfer.getData('text/plain');
+                const role = e.dataTransfer.getData('application/yolo-role') || 'assistant';
+                if (text && editor) {
+                    const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+                    editor.createShapes([
+                        {
+                            id: createShapeId(),
+                            type: 'note',
+                            x: point.x,
+                            y: point.y,
+                            props: {
+                                text: text,
+                                color: role === 'user' ? 'blue' : 'grey',
+                            }
+                        }
+                    ]);
+                    toast.success('灵感已投射到画布');
+                }
+            }}
+          >
+            <div className="absolute inset-0 z-0">
+                <Tldraw 
+                    onMount={(editor) => setEditor(editor)}
+                    inferDarkMode={true}
+                    hideUi={false}
+                />
+            </div>
+            
+            {/* Canvas Header/Overlay */}
+            <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
+                <div className="bg-white/80 dark:bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-black/5 dark:border-white/10 shadow-xl">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-black dark:text-white flex items-center gap-2">
+                        <Sparkles className="w-3 h-3 text-blue-500" />
+                        创意画布
+                    </h3>
+                </div>
+                
+                <button 
+                    onClick={syncToWorkstation}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all flex items-center gap-2"
+                >
+                    <ExternalLink className="w-3 h-3" />
+                    同步所有灵感至工作台
+                </button>
+            </div>
+            
+            <div className="absolute bottom-4 right-4 z-10">
+                <button 
+                    onClick={() => {
+                        if (editor) {
+                            const shapes = editor.getShapePageBounds(editor.getCurrentPageId());
+                            if (shapes) editor.zoomToSelection();
+                        }
+                    }}
+                    className="p-3 bg-white/80 dark:bg-black/80 backdrop-blur-md rounded-2xl border border-black/5 dark:border-white/10 shadow-xl hover:scale-110 transition-all text-gray-500"
+                >
+                    <Maximize2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                          </div>
+                                        </Panel>
+                                      </PanelGroup>
+                                    </div>
+                                  );
+                                }
+                                

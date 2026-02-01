@@ -5,6 +5,7 @@ Gemini-Image-Tools 是一个基于 OpenAI 协议标准构建的专业图像生�
 ## 🌟 核心特性
 
 - **极致 UI/UX**：采用 Apple 设计语言，极致扁平化风格，支持 **原生黑暗模式**。
+- **无限画布白板**：集成 [Jaaz](https://github.com/ArtisanLabs/Jaaz) 白板功能，支持自由绘制、图片导入，并可将画布内容作为参考图发送到生成器。
 - **高性能协议转换**：将 OpenAI 格式的图像生成请求无缝转发至 Gemini Chat 协议后端，支持 `extra_body` 中的 `size` 参数。
 - **多任务并行处理**：支持 1 至 16 路任务并行生成，每路任务拥有独立的进度状态及重试逻辑。
 - **生产力工具集**：
@@ -16,7 +17,7 @@ Gemini-Image-Tools 是一个基于 OpenAI 协议标准构建的专业图像生�
 
 ## 🛠️ 技术栈
 
-- **前端**: React 19, TypeScript, Tailwind CSS, Framer Motion (动效), Sonner (消息)
+- **前端**: React 19, TypeScript, Tailwind CSS, Framer Motion (动效), Sonner (消息), Excalidraw (白板)
 - **后端**: Rust (Axum, Tokio), Reqwest, Zip-rs
 - **协议**: OpenAI Chat Completions 兼容协议
 
@@ -44,7 +45,7 @@ Gemini-Image-Tools 是一个基于 OpenAI 协议标准构建的专业图像生�
 
 ## ⚙️ 配置说明
 
-首次启动后，可以通过前端右上角的 **“设置”** 面板进行高级配置：
+首次启动后，可以通过前端右上角的 **"设置"** 面板进行高级配置：
 - **Primary Endpoint**: 您的 Gemini 代理地址 (例如 `http://127.0.0.1:8045/v1`)。
 - **Advanced Control**: 设置单次请求超时（建议 300s）和最大重试策略。
 
@@ -54,6 +55,21 @@ Gemini-Image-Tools 是一个基于 OpenAI 协议标准构建的专业图像生�
 ```bash
 docker-compose up -d
 ```
+
+## 🎨 白板功能
+
+白板功能基于 [Excalidraw](https://excalidraw.com/) 构建，灵感来自 [Jaaz](https://github.com/ArtisanLabs/Jaaz) 项目。
+
+### 功能特性：
+- **自由绘制**：支持画笔、形状、文字等多种绘图工具
+- **图片导入**：拖拽或点击导入图片到画布
+- **导出功能**：将画布导出为 PNG 图片
+- **发送到生成器**：一键将画布内容作为参考图发送到图像生成工作台
+
+## 🙏 致谢
+
+- [Jaaz](https://github.com/ArtisanLabs/Jaaz) - 世界首个开源多模态画布创意 Agent，本项目的白板功能受其启发并参考了其实现方式
+- [Excalidraw](https://github.com/excalidraw/excalidraw) - 优秀的开源白板绘图库
 
 ## 📄 许可证
 
